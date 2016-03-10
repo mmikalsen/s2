@@ -13,7 +13,7 @@ const (
 
 // boot the compute_resource
 func RunCompute() {
-  out, err := exec.Command("bash/runcompute.sh", compute_node, "9000").Output()
+  out, err := exec.Command("bash/runcompute.sh", compute_node, port).Output()
   if err != nil {
         fmt.Printf("%s", err)
     }
@@ -23,7 +23,7 @@ func RunCompute() {
 
 // exit compute_resource
 func KillCompute() {
-  out, err := exec.Command("bash/killcompute.sh", "compute-10-2").Output()
+  out, err := exec.Command("bash/killcompute.sh", compute_node).Output()
   if err != nil {
         fmt.Printf("%s", err)
     }
