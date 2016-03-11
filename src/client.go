@@ -2,10 +2,14 @@ package main
 
 import (
     "fmt"
-    "net"
     "log"
-    //"./lib/logger"
+    "./lib/server"
     "time"
+    "os"
+    "strconv"
+    "net"
+    "reflect"
+    "runtime"
 )
 
 const (
@@ -18,31 +22,40 @@ const (
 var (
     LOAD_BALANCER = "localhost:8000"
     TTL = 100 * time.Microsecond
+    /*
+        0 - tiles channel
+        1 - local TTLs  channel
+        2 - reciver-requester channel
+    */
+    chans [4]chan []byte
+
 )
 
 
-func screenManager(ch chan int) {
-    var c int
+
+func screenManager(ch chan []byte) {
+    var c []byte
     for {
         c = <-ch
-        switch c {
-        case PROGRESS:
+
+        switch string(c) {
+        case "B":
             fmt.Printf("\x1b[34;1m■ ")
-        case SUCCESS:
+        case "G":
             fmt.Printf("\x1b[32;1m■ ")
-        case TIMEOUT:
+        case "R":
             fmt.Printf("\x1b[31;1m■ ")
-        case DELAYED_SUCCESS:
+        case "W":
             fmt.Printf("\x1b[0m■ ")
 
         }
     }
 }
 
-func timeManager(ch chan bool) {
+func timeManager(ch chan []byte) {
     for {
         state := <-ch
-        if state {
+        if string(state) == "-" {
             TTL -= 10 * time.Microsecond
         } else {
             TTL += 42 * time.Microsecond
@@ -51,51 +64,68 @@ func timeManager(ch chan bool) {
 }
 
 func main() {
+    runtime.GOMAXPROCS(runtime.NumCPU())
     /* Init logging to file */
 
     //logfile = new(logS)
     //logfile.Init()
-    scrCh := make(chan int, 100)
-    tManagerCh := make(chan bool, 100)
-    go screenManager(scrCh)
-    go timeManager(tManagerCh)
 
-    // Connect to load balancer for frontend info
+    /* Start Tiles and Timeout-Mananger */
+    chans[0] = make(chan []byte, 10)
+    chans[1] = make(chan []byte)
+    chans[2] = make(chan []byte, 10)
 
-    frontend := "localhost:8099"
-    conn, err := net.Dial("tcp", frontend)
+    go screenManager(chans[0])
+    /* start UDP server */
+    server := new(server.UDPServer)
+    server.Init(":9078")
+
+    go reciver(server)
+
+
+    frontend, err := net.ResolveUDPAddr("udp", "localhost:9001")
     if err != nil {
-        log.Fatal(err)
+         log.Fatal(err)
     }
 
 
-    for {
-        scrCh <- PROGRESS
-        timeout := make(chan bool, 1)
-        recv := make(chan bool, 1)
-        go func() {
-            time.Sleep(TTL)
-            timeout <- true
-        }()
+    requester(server, frontend)
+}
 
-        go func() {
-            buf := make([]byte, 1024)
-            fmt.Fprintf(conn, "GET / HTTP/1.0\r\n\r\n")
-            conn.Read(buf)
-            if err != nil {
-                log.Fatal(err)
-            }
-            recv <- true
-        }()
+func requester(server *server.UDPServer, remoteAddr *net.UDPAddr) {
 
-        select {
-        case <-recv:
-            scrCh <- SUCCESS
-            tManagerCh <- true
-        case <-timeout:
-            scrCh <- TIMEOUT
-            tManagerCh <- false
-        }
-        time.Sleep(1 * time.Second)
+    hostname, _ := os.Hostname()
+    for i := 0; ; i++ {
+        key := []byte(hostname + strconv.Itoa(i))
+
+        chans[2] <- key
+        fmt.Printf("\x1b[34;1m■")
+        server.Write(key, remoteAddr)
     }
+}
+
+func reciver(server *server.UDPServer) {
+     hostname, _ := os.Hostname()
+     for i := 0; ; i++ {
+         key := []byte(hostname + strconv.Itoa(i))
+
+             select {
+                 case requestKey := <- chans[2]:
+                    fetchedKey, _, err := server.Read(len(key) + 10)
+
+                 if err != nil {
+                      log.Fatal(err)
+                 }
+
+                 if reflect.DeepEqual(requestKey, fetchedKey) {
+                    fmt.Printf("\x1b[32;1m■")
+                } else {
+                     fmt.Printf("\x1b[0m■")
+                }
+                default:
+                    time.Sleep(1 * time.Millisecond)
+                    i--
+         }
+         //fmt.Println(string(key))
+     }
 }
