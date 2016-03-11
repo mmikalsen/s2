@@ -20,7 +20,6 @@ func RunCompute() {
     fmt.Printf("%s", out)
 }
 
-
 // exit compute_resource
 func KillCompute() {
   out, err := exec.Command("bash/killcompute.sh", compute_node).Output()
@@ -30,6 +29,21 @@ func KillCompute() {
     fmt.Printf("%s", out)
 }
 
+func RunNode(client string) {
+  out, err := exec.Command("bash/runfrontnode.sh", client, port).Output()
+  if err != nil {
+        fmt.Printf("%s", err)
+    }
+    fmt.Printf("%s", out)
+}
+
+func Killnode(client string) {
+  out, err := exec.Command("bash/killfrontnode.sh", client).Output()
+  if err != nil {
+        fmt.Printf("%s", err)
+    }
+    fmt.Printf("%s", out)
+}
 
 func main() {
 
