@@ -5,7 +5,8 @@ import (
     "net"
     "log"
     "time"
-    //"net/http"
+    "runtime"
+    "./lib/server"
 )
 
 var (
@@ -25,34 +26,8 @@ func timeManager(ch chan bool) {
 }
 
 func main() {
-    tManagerCh := make(chan bool, 100)
-    go timeManager(tManagerCh)
+    runtime.GOMAXPROCS(runtime.NumCPU())
 
-    ln, err := net.Listen("tcp", "localhost:8099")
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    for {
-        conn, err := ln.Accept()
-        if err != nil {
-            log.Fatal(err)
-        }
-        go handleConnection(conn, tManagerCh)
-    }
+    server := new(server.UDPServer)
+    server.Init(":9001")
 }
-
-func handleConnection(conn net.Conn, tCh chan bool) {
-    defer conn.Close()
-
-    for {
-        buf := make([]byte, 1024)
-        fmt.Println("recv")
-        _, err := conn.Read(buf)
-        if err != nil {
-            log.Fatal()
-        }
-        conn.Write([]byte("OK"))
-    }
-}
-
