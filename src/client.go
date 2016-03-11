@@ -8,8 +8,8 @@ import (
     "os"
     "strconv"
     "net"
-    "reflect"
     "runtime"
+    ctrie "./lib/ctrie"
 )
 
 const (
@@ -28,29 +28,9 @@ var (
         2 - reciver-requester channel
     */
     chans [4]chan []byte
-
 )
 
 
-
-func screenManager(ch chan []byte) {
-    var c []byte
-    for {
-        c = <-ch
-
-        switch string(c) {
-        case "B":
-            fmt.Printf("\x1b[34;1m■ ")
-        case "G":
-            fmt.Printf("\x1b[32;1m■ ")
-        case "R":
-            fmt.Printf("\x1b[31;1m■ ")
-        case "W":
-            fmt.Printf("\x1b[0m■ ")
-
-        }
-    }
-}
 
 func timeManager(ch chan []byte) {
     for {
@@ -71,16 +51,16 @@ func main() {
     //logfile.Init()
 
     /* Start Tiles and Timeout-Mananger */
-    chans[0] = make(chan []byte, 10)
-    chans[1] = make(chan []byte)
-    chans[2] = make(chan []byte, 10)
+    chans[0] = make(chan []byte, 100)
+    chans[1] = make(chan []byte, 100)
 
-    go screenManager(chans[0])
+    Ctrie := ctrie.New(nil)
+
     /* start UDP server */
     server := new(server.UDPServer)
     server.Init(":9078")
 
-    go reciver(server)
+    go reciver(server, Ctrie)
 
 
     frontend, err := net.ResolveUDPAddr("udp", "localhost:9001")
@@ -89,43 +69,48 @@ func main() {
     }
 
 
-    requester(server, frontend)
+    requester(server, frontend, Ctrie)
 }
 
-func requester(server *server.UDPServer, remoteAddr *net.UDPAddr) {
+func requester(server *server.UDPServer, remoteAddr *net.UDPAddr, ctrie *ctrie.Ctrie) {
 
     hostname, _ := os.Hostname()
-    for i := 0; ; i++ {
+    for i := 0; i < 10000; i++ {
         key := []byte(hostname + strconv.Itoa(i))
 
-        chans[2] <- key
+        ctrie.Insert(key, time.Now())
         fmt.Printf("\x1b[34;1m■")
         server.Write(key, remoteAddr)
+
     }
 }
 
-func reciver(server *server.UDPServer) {
-     hostname, _ := os.Hostname()
-     for i := 0; ; i++ {
-         key := []byte(hostname + strconv.Itoa(i))
+func reciver(server *server.UDPServer, ctrie *ctrie.Ctrie) {
 
-             select {
-                 case requestKey := <- chans[2]:
-                    fetchedKey, _, err := server.Read(len(key) + 10)
+     for i := 0; i < 10000; i++ {
+        fetchedKey, _, err := server.Read(32)
+        if err != nil {
+            log.Fatal()
+        }
+        t1 := time.Now()
+        if val, ok := ctrie.Lookup(fetchedKey); ok {
 
-                 if err != nil {
-                      log.Fatal(err)
-                 }
+            /* Start a goroutine to remove the key from trie */
+            go func() {
+                ctrie.Remove(fetchedKey)
+            }()
 
-                 if reflect.DeepEqual(requestKey, fetchedKey) {
-                    fmt.Printf("\x1b[32;1m■")
-                } else {
-                     fmt.Printf("\x1b[0m■")
-                }
-                default:
-                    time.Sleep(1 * time.Millisecond)
-                    i--
-         }
-         //fmt.Println(string(key))
-     }
+            t0, _ := val.(time.Time)
+            if dur := t1.Sub(t0); dur > TTL {
+                TTL += TTL/4
+                fmt.Printf("\x1b[31;1m■")
+            } else {
+                TTL -= TTL/8
+                fmt.Printf("\x1b[32;1m■")
+
+            }
+        } else {
+            log.Fatal("NOT FOUND in trie!!!!!")
+        }
+    }
 }
