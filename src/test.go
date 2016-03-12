@@ -5,10 +5,11 @@ import (
     "log"
     "./lib/server"
     "time"
+    "math/rand"
 )
 
 func main() {
-
+    rand.Seed(time.Now().Unix())
     s := new(server.UDPServer)
     s.Init(":9001")
 
@@ -19,9 +20,12 @@ func main() {
             log.Fatal(err)
         }
 
-        s.Write(dat, remoteAddr)
+        go func() {
+            time.Sleep( time.Duration(rand.Int31n(10))* time.Millisecond)
+            s.Write(dat, remoteAddr)
 
-   }
+        }()
+    }
    time.Sleep(5 * time.Second)
    s.Conn.Close()
 }
