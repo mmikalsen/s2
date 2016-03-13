@@ -17,7 +17,7 @@ type client struct {
     s *server.UDPServer
     load_balancer *net.UDPAddr
     frontend *net.UDPAddr
-    sCh chan bool
+    sCh chan int
     ttl time.Duration
     index *ctrie.Ctrie
 }
@@ -33,6 +33,7 @@ func (c *client) Init(port string, load_balancer_addr string) (*net.UDPAddr, err
         return nil, err
     }
 
+    c.sCh = make(chan int, 10)
     // index data structure
     c.index = ctrie.New(nil)
 
@@ -46,7 +47,6 @@ func (c *client) Init(port string, load_balancer_addr string) (*net.UDPAddr, err
         return nil, err
      }
 
-    // chans
 
     c.ttl = 10 * time.Millisecond
     return c.frontend, nil
@@ -67,14 +67,15 @@ func (c *client) recive() {
                 c.index.Remove(fetchedKey)
             }()
 
-            t0, _ := val.(time.Time)
-            if dur := t1.Sub(t0); dur > c.ttl {
-                c.ttl += c.ttl/4
-                fmt.Printf("\x1b[31;1m■")
-            } else {
+            expire, _ := val.(time.Time)
+            if expire.After(t1) {
                 c.ttl -= c.ttl/16
-                fmt.Printf("\x1b[32;1m■")
-
+                //fmt.Printf("\x1b[32;1m■")
+                log.Print("ttl - ok")
+            } else {
+                c.ttl += c.ttl/4
+                //fmt.Printf("\x1b[0m■")
+                log.Print("ttl - failed, ttl:", expire, " - now:", t1)
             }
         } else {
             /* Control signal */
@@ -85,18 +86,47 @@ func (c *client) recive() {
             }
 
         }
+        time.Sleep(10 * time.Microsecond)
     }
 }
 
 func (c *client) Request(remoteAddr *net.UDPAddr) {
     hostname, _ := os.Hostname()
-    for i := 0; i < 10000; i++ {
-        key := []byte(hostname + strconv.Itoa(i))
+    timeout := make(chan []byte, 100)
+    go c.TimeoutMonitor(timeout)
 
-        c.index.Insert(key, time.Now())
+    for i := 0; ;i++{
+        select {
+        case _ = <- c.sCh:
+            return
+        default:
+        }
+
+        key := []byte(hostname + strconv.Itoa(i))
+        ttl := time.Now().Add(c.ttl)
+        go func() {
+            tKey := key
+            time.Sleep(c.ttl)
+            timeout <- tKey
+        }()
+
+        c.index.Insert(key,ttl)
+        //log.Print("Sent: ", key, "- expire: ", ttl)
         fmt.Printf("\x1b[34;1m■")
         c.s.Write(key, remoteAddr)
+        time.Sleep(10 * time.Microsecond)
+    }
+}
 
+func(c *client) TimeoutMonitor(ch chan []byte) {
+    for {
+        signal := <-ch
+        if _, ok := c.index.Lookup(signal); ok {
+            //fmt.Printf("\x1b[31;1m■")
+            c.ttl = c.ttl + c.ttl/10
+            log.Print("TimeOut")
+
+        }
     }
 }
 
@@ -109,7 +139,8 @@ func main() {
         log.Fatal(err)
     }
 
+    log.Print("start requesting")
     c.Request(frontend)
 
-    time.Sleep(10 * time.Second)
+    time.Sleep(60 * time.Second)
 }
