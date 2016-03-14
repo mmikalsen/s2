@@ -1,7 +1,7 @@
 package main
 
 import (
-    "fmt"
+    _"fmt"
     "log"
     "./lib/server"
     "time"
@@ -71,11 +71,11 @@ func (c *client) recive() {
             if expire.After(t1) {
                 c.ttl -= c.ttl/16
                 //fmt.Printf("\x1b[32;1m■")
-                log.Print("ttl - ok")
+                log.Print(string(fetchedKey), ": ok - current ttl: ", c.ttl)
             } else {
                 c.ttl += c.ttl/4
                 //fmt.Printf("\x1b[0m■")
-                log.Print("ttl - failed, ttl:", expire, " - now:", t1)
+                log.Print(string(fetchedKey), "ttl failed by:", t1.Sub(expire))
             }
         } else {
             /* Control signal */
@@ -86,7 +86,6 @@ func (c *client) recive() {
             }
 
         }
-        time.Sleep(10 * time.Microsecond)
     }
 }
 
@@ -112,9 +111,9 @@ func (c *client) Request(remoteAddr *net.UDPAddr) {
 
         c.index.Insert(key,ttl)
         //log.Print("Sent: ", key, "- expire: ", ttl)
-        fmt.Printf("\x1b[34;1m■")
+        //fmt.Printf("\x1b[34;1m■")
         c.s.Write(key, remoteAddr)
-        time.Sleep(10 * time.Microsecond)
+        time.Sleep(100 * time.Millisecond)
     }
 }
 
@@ -124,8 +123,7 @@ func(c *client) TimeoutMonitor(ch chan []byte) {
         if _, ok := c.index.Lookup(signal); ok {
             //fmt.Printf("\x1b[31;1m■")
             c.ttl = c.ttl + c.ttl/10
-            log.Print("TimeOut")
-
+            //log.Print("TimeOut")
         }
     }
 }
@@ -142,5 +140,4 @@ func main() {
     log.Print("start requesting")
     c.Request(frontend)
 
-    time.Sleep(60 * time.Second)
 }
