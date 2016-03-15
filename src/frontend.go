@@ -9,6 +9,10 @@ import (
     "net/http"
 )
 
+type HttpResponse struct {
+	resp *http.Response
+	err error
+}
 
 type Frontend struct {
     s *server.UDPServer
@@ -23,7 +27,7 @@ func (f *Frontend) Init(port string, load_balancer_addr string) {
     var err error
     f.s = new(server.UDPServer)
     f.s.Init(port)
-    f.ttl = 10 * time.Microsecond
+    f.ttl = 2 * time.Second
 
     f.load_balancer, err = net.ResolveUDPAddr("udp", load_balancer_addr)
     if err != nil {
@@ -34,7 +38,7 @@ func (f *Frontend) Init(port string, load_balancer_addr string) {
     go f.recive()
 
     // make itself availble for clients and get backend_addr from load_balancer
-    f.backend_addr = "http://localhost:8000"
+    f.backend_addr = "http://compute-10-2:8000"
     f.clients = make([]*net.UDPAddr, 10)
     f.clients[0], err = net.ResolveUDPAddr("udp", ":8090")
     if err != nil {
@@ -51,27 +55,40 @@ func (f *Frontend) recive() {
         if err != nil {
              log.Fatal(err)
         }
+		log.Print("Sending request: ", string(fetchedKey), " to backend")
         go f.httpGet(fetchedKey, remoteAddr)
     }
 }
 
 func (f *Frontend) httpGet(key []byte, addr *net.UDPAddr) {
-    var t0, t1 time.Time
-    t0 = time.Now()
+	ttl := f.ttl
+	timeoutCh := make(chan bool)
+	responseCh := make(chan *HttpResponse)
 
+	go func() {
+		time.Sleep(ttl)
+		timeoutCh <- true
+	}()
+	go func() {
+		resp, err := http.Get(f.backend_addr)
+		responseCh <- &HttpResponse{resp, err}
+	}()
 
-    for {
-        resp, err := http.Get(f.backend_addr)
-        resp.Body.Close()
-        if err == nil && resp.StatusCode == 200 {
-            break
-        }
-    }
-    t1 = time.Now()
-    f.s.Write(key, addr)
-    log.Print(string(key), "OK", "used: ", t1.Sub(t0))
+	select {
+	case r := <-responseCh:
+		// got response before timeout
+		if r.err != nil && r.resp.StatusCode != 200 {
+			return
+		}
+		f.s.Write(key, addr)
+	case <- timeoutCh:
+		// timeout
+		f.ttl += f.ttl/10
+		log.Print("timeout")
+	}
 
 }
+
 func main() {
     runtime.GOMAXPROCS(runtime.NumCPU())
 
