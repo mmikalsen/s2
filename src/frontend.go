@@ -38,7 +38,7 @@ func (f *Frontend) Init(port string, load_balancer_addr string) {
     go f.recive()
 
     // make itself availble for clients and get backend_addr from load_balancer
-    f.backend_addr = "http://compute-10-2:8000"
+    f.backend_addr = "http://compute-11-1:8000"
     f.clients = make([]*net.UDPAddr, 10)
     f.clients[0], err = net.ResolveUDPAddr("udp", ":8090")
     if err != nil {
@@ -80,7 +80,8 @@ func (f *Frontend) httpGet(key []byte, addr *net.UDPAddr) {
 		if r.err != nil && r.resp.StatusCode != 200 {
 			return
 		}
-		f.s.Write(key, addr)
+		go f.s.Write(key, addr)
+		return
 	case <- timeoutCh:
 		// timeout
 		f.ttl += f.ttl/10

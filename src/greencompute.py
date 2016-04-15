@@ -11,7 +11,7 @@ from time import sleep
 
 httpdServeRequests = True
 latencySkew = 10
-latencyMultiplier = 10
+latencyMultiplier = 5
 
 def waitToProduce():
     tts = latencyMultiplier * random.expovariate(latencySkew)
