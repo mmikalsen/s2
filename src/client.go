@@ -135,7 +135,9 @@ func (c *client) Request(count int) int{
         //log.Print("Sent: ", key, "- expire: ", ttl)
         fmt.Printf("\x1b[34;1m■")
         c.s.Write(key, c.frontend)
+
 		time.Sleep(2 * time.Second)
+		
 		t1 := time.Now()
 		if c.lease.After(t1) {
 			continue
@@ -160,7 +162,7 @@ func main() {
     runtime.GOMAXPROCS(runtime.NumCPU())
 
     c := new(client)
-	err := c.Init(":9000", "compute-8-1:9000")
+	err := c.Init(":9000", "compute-5-1:9000")
 	if err != nil {
 		log.Fatal(err)
 	}

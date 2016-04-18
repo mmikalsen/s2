@@ -48,9 +48,10 @@ func (f *Frontend) Init(load_balancer_addr string) {
 	msg := <-f.sCh
 
 	f.backend_addr = msg
-	f.s.Write([]byte("ACK"), f.load_balancer)
-
 	f.clients = make([]*net.UDPAddr, 8)
+	for {
+
+	}
 }
 
 
@@ -64,6 +65,7 @@ func (f *Frontend) recive() {
         }
 		if remoteAddr.String() == f.load_balancer.String() {
 			log.Print("GOT MSG: load_balancer - " + string(fetchedKey))
+			f.sCh <- string(fetchedKey)
 		} else {
 			log.Print("Sending request: ", string(fetchedKey), " to backend")
 			go f.httpGet(fetchedKey, remoteAddr)
@@ -74,25 +76,28 @@ func (f *Frontend) recive() {
 func (f *Frontend) httpGet(key []byte, addr *net.UDPAddr) {
 	ttl := f.ttl
 	timeoutCh := make(chan bool)
-	responseCh := make(chan *HttpResponse)
+	responseCh := make(chan http.Response)
 
 	go func() {
 		time.Sleep(ttl)
 		timeoutCh <- true
 	}()
 	go func() {
-		resp, err := http.Get(f.backend_addr)
-		responseCh <- &HttpResponse{resp, err}
+		resp, err := http.Get("http://" + f.backend_addr)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer resp.Body.Close()
+		responseCh <- *resp
 	}()
 
 	select {
 	case r := <-responseCh:
 		// got response before timeout
-		if r.err != nil && r.resp.StatusCode != 200 {
+		if r.StatusCode != 200 {
 			return
 		}
-		go f.s.Write(key, addr)
-		return
+		f.s.Write(key, addr)
 	case <- timeoutCh:
 		// timeout
 		f.ttl += f.ttl/10
@@ -126,7 +131,8 @@ func (f *Frontend) runtime(debug int) {
 
 func main() {
     runtime.GOMAXPROCS(runtime.NumCPU())
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
     frontend := new(Frontend)
-    frontend.Init("compute-1-1:9000")
+    frontend.Init("compute-5-1:9000")
 }

@@ -15,7 +15,7 @@ import  (
 
 var (
 	LEASETIME = 10 * time.Second
-	MAXCLIENTS = int32(8)
+	MAXCLIENTS = int32(3)
 	PORT = ":9000"
 )
 
@@ -54,7 +54,7 @@ func(l *lb) Init(backend string) error {
 	// Make referance to frontend servers \\
 	for i := range(l.frontends) {
 		f := &l.frontends[i]
-		f.addr, err = net.ResolveUDPAddr("udp", "compute-10-" + strconv.Itoa((i + 1)) +":9001")
+		f.addr, err = net.ResolveUDPAddr("udp", "compute-10-" + strconv.Itoa((i + 1)) +":9000")
 		if err != nil {
 			return err
 		}
@@ -79,11 +79,6 @@ func (l *lb) Serve() {
 		} else if string(msg) == "frontend_up" {
 			log.Print("NEW BACKEND: ", remoteAddr.String())
 			l.s.Write([]byte(l.backend), remoteAddr)
-			msg :=<-l.sCh
-			if msg == "ACK" {
-				return
-			}
-
 		}
 	}
 }

@@ -5,11 +5,13 @@ import (
     "net"
     "net/http"
     "errors"
+	"time"
 )
 
 type UDPServer struct {
     Conn *net.UDPConn
     LocalAddr *net.UDPAddr
+	Client http.Client
 }
 
 func (s *UDPServer) Init(port string) error {
@@ -24,6 +26,10 @@ func (s *UDPServer) Init(port string) error {
     if err != nil {
         return err
     }
+
+	s.Client = http.Client{
+		    Timeout: time.Duration(0),
+	}
 
     return nil
 }
@@ -43,7 +49,7 @@ func (s *UDPServer) Read(b int) ([]byte, *net.UDPAddr, error) {
 }
 
 func(s *UDPServer) http_request(addr string) (error) {
-    resp, err := http.Get(addr)
+    resp, err := s.Client.Get(addr)
     if err != nil {
          return err
     }
