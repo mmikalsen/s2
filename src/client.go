@@ -160,10 +160,10 @@ func(c *client) TimeoutMonitor(ch chan []byte) {
 func main() {
     runtime.GOMAXPROCS(runtime.NumCPU())
 
-	lol, err := os.Getwd()
-	log.Print(lol)
-
-    conf.GetConfig("s2/src/config.json")
+    err := conf.GetConfig("s2/src/config.json")
+    if err != nil {
+		log.Fatal(err)
+	}
 
     c := new(client)
 	err = c.Init()

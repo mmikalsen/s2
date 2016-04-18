@@ -3,7 +3,6 @@ package config
 import (
     "encoding/json"
     "os"
-    "fmt"
 )
 
 type Configuration struct {
@@ -23,12 +22,17 @@ type Configuration struct {
     FrontendInitTTL int32
 }
 
-func (config *Configuration) GetConfig(path string){
+func (config *Configuration) GetConfig(path string) error{
 
-	file, _ := os.Open(path)
+	file, err := os.Open(path)
+    if err != nil {
+      return err
+    }
 	decoder := json.NewDecoder(file)
-	err := decoder.Decode(config)
+	err = decoder.Decode(config)
 	if err != nil {
-	  fmt.Println("Config error:", err)
+      return err
 	}
+
+    return err
 }
