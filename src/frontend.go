@@ -4,6 +4,7 @@ import (
     "net"
     "log"
     "time"
+	"strings"
     "runtime"
     "./lib/server"
     "net/http"
@@ -19,14 +20,18 @@ type Frontend struct {
     load_balancer *net.UDPAddr
     backend_addr string
     clients []*net.UDPAddr
-    sCh chan int
+    sCh chan string
     ttl time.Duration
 }
 
-func (f *Frontend) Init(port string, load_balancer_addr string) {
+var (
+	PORT = ":9000"
+)
+
+func (f *Frontend) Init(load_balancer_addr string) {
     var err error
     f.s = new(server.UDPServer)
-    f.s.Init(port)
+    f.s.Init(PORT)
     f.ttl = 2 * time.Second
 
     f.load_balancer, err = net.ResolveUDPAddr("udp", load_balancer_addr)
@@ -34,16 +39,18 @@ func (f *Frontend) Init(port string, load_balancer_addr string) {
         log.Fatal(err)
     }
 
-    f.sCh = make(chan int, 10)
+    f.sCh = make(chan string)
     go f.recive()
 
-    // make itself availble for clients and get backend_addr from load_balancer
-    f.backend_addr = "http://compute-11-1:8000"
-    f.clients = make([]*net.UDPAddr, 10)
-    f.clients[0], err = net.ResolveUDPAddr("udp", ":8090")
-    if err != nil {
-        log.Fatal(err)
-    }
+	// send init message to lb
+	f.s.Write([]byte("frontend_up"), f.load_balancer)
+
+	msg := <-f.sCh
+
+	f.backend_addr = msg
+	f.s.Write([]byte("ACK"), f.load_balancer)
+
+	f.clients = make([]*net.UDPAddr, 8)
 }
 
 
@@ -55,8 +62,12 @@ func (f *Frontend) recive() {
         if err != nil {
              log.Fatal(err)
         }
-		log.Print("Sending request: ", string(fetchedKey), " to backend")
-        go f.httpGet(fetchedKey, remoteAddr)
+		if remoteAddr.String() == f.load_balancer.String() {
+			log.Print("GOT MSG: load_balancer - " + string(fetchedKey))
+		} else {
+			log.Print("Sending request: ", string(fetchedKey), " to backend")
+			go f.httpGet(fetchedKey, remoteAddr)
+		}
     }
 }
 
@@ -90,10 +101,32 @@ func (f *Frontend) httpGet(key []byte, addr *net.UDPAddr) {
 
 }
 
+func (f *Frontend) runtime(debug int) {
+	/* LOADBALANCER MSG 
+	[status:client:client...]
+	*/
+	for {
+		msg := <-f.sCh
+		f.s.Write([]byte("ACK"), f.load_balancer)
+
+		clients := strings.Split(msg, ":")
+		status := clients[0]
+
+		if status == "OK" {
+			for _, _ = range(clients[1:]) {
+				// look up in hashmap //
+				// change //
+				// reset timer? //
+			}
+		}
+
+		// print information 
+	}
+}
+
 func main() {
     runtime.GOMAXPROCS(runtime.NumCPU())
 
     frontend := new(Frontend)
-    frontend.Init(":9001", ":9001")
-    time.Sleep(100 * time.Second)
+    frontend.Init("compute-1-1:9000")
 }

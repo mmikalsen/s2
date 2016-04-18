@@ -15,7 +15,8 @@ import  (
 
 var (
 	LEASETIME = 10 * time.Second
-	MAXCLIENTS = int32(2)
+	MAXCLIENTS = int32(8)
+	PORT = ":9000"
 )
 
 type route struct {
@@ -34,16 +35,20 @@ type lb struct {
 	routes cmap.ConcurrentMap
 	frontends [3]lbFrontend
 	s *server.UDPServer
+	backend string
+	sCh chan string
 }
 
-func(l *lb) Init(port string) error {
+func(l *lb) Init(backend string) error {
 	l.routes = cmap.New()
 
 	l.s = new(server.UDPServer)
-	err := l.s.Init(port)
+	err := l.s.Init(PORT)
 	if err !=nil {
 		return err
 	}
+	l.backend = backend
+	l.sCh = make(chan string)
 
 
 	// Make referance to frontend servers \\
@@ -71,6 +76,14 @@ func (l *lb) Serve() {
 				log.Fatal(err)
 			}
 			l.s.Write([]byte(frontend.addr.String() + " " + lease.Format(time.UnixDate)), remoteAddr)
+		} else if string(msg) == "frontend_up" {
+			log.Print("NEW BACKEND: ", remoteAddr.String())
+			l.s.Write([]byte(l.backend), remoteAddr)
+			msg :=<-l.sCh
+			if msg == "ACK" {
+				return
+			}
+
 		}
 	}
 }
@@ -123,7 +136,7 @@ func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	lb := new(lb)
-	err := lb.Init(":9000")
+	err := lb.Init("compute-8-1:8000")
 	if err != nil {
 		log.Fatal(err)
 	}
