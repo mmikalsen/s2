@@ -5,6 +5,7 @@ import (
    "errors"
     "log"
     "./lib/server"
+    "./lib/config"
     "time"
     "os"
 	"hash/crc32"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"github.com/streamrail/concurrent-map"
 )
+
 
 type Hash func(data []byte) uint32
 type client struct {
@@ -29,6 +31,12 @@ type client struct {
 
 func (c *client) Init(port string, load_balancer_addr string) (error) {
     var err error
+
+
+   	conf := new(config.Configuration)
+   	conf.GetConfig("config.json")
+   	fmt.Println(conf.Frontends)
+
 
     c.s = new(server.UDPServer)
     c.s.Init(port)
