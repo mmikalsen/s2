@@ -7,6 +7,7 @@ import (
 	"strings"
     "runtime"
     "./lib/server"
+    "./lib/config"
     "net/http"
 )
 
@@ -25,16 +26,16 @@ type Frontend struct {
 }
 
 var (
-	PORT = ":9000"
+    conf = new(config.Configuration)
 )
 
-func (f *Frontend) Init(load_balancer_addr string) {
+func (f *Frontend) Init() {
     var err error
     f.s = new(server.UDPServer)
-    f.s.Init(PORT)
-    f.ttl = 2 * time.Second
+    f.s.Init(conf.FrontendPort)
+    f.ttl = time.Duration(conf.FrontendInitTTL) * time.Millisecond
 
-    f.load_balancer, err = net.ResolveUDPAddr("udp", load_balancer_addr)
+    f.load_balancer, err = net.ResolveUDPAddr("udp", conf.LB[0] + conf.LBPort)
     if err != nil {
         log.Fatal(err)
     }
@@ -131,8 +132,14 @@ func (f *Frontend) runtime(debug int) {
 
 func main() {
     runtime.GOMAXPROCS(runtime.NumCPU())
+
+    err := conf.GetConfig("config.json")
+    if err != nil {
+        log.Fatal(err)
+    }
+
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
     frontend := new(Frontend)
-    frontend.Init("compute-5-1:9000")
+    frontend.Init()
 }
