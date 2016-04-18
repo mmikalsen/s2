@@ -16,6 +16,9 @@ import (
 	"github.com/streamrail/concurrent-map"
 )
 
+var(
+	conf = new(config.Configuration)
+)
 
 type Hash func(data []byte) uint32
 type client struct {
@@ -29,20 +32,15 @@ type client struct {
 	hash Hash
 }
 
-func (c *client) Init(port string, load_balancer_addr string) (error) {
+func (c *client) Init() (error) {
     var err error
 
 
-   	conf := new(config.Configuration)
-   	conf.GetConfig("config.json")
-   	fmt.Println(conf.Frontends)
-
-
     c.s = new(server.UDPServer)
-    c.s.Init(port)
+    c.s.Init(conf.ClientPort)
 	c.hash = crc32.ChecksumIEEE
 
-    c.load_balancer, err = net.ResolveUDPAddr("udp", load_balancer_addr)
+    c.load_balancer, err = net.ResolveUDPAddr("udp", conf.LB[0] + conf.LBPort)
     if err != nil {
         return err
     }
@@ -60,7 +58,7 @@ func (c *client) Init(port string, load_balancer_addr string) (error) {
 	// wait for conformation about frontend
 	if ok := <- c.sCh; ok {
 		log.Print("GOT " , c.frontend.String(), "as frontend")
-		c.ttl = 10 * time.Millisecond
+		c.ttl = time.Duration(conf.ClientInitTTL) * time.Millisecond
 		return nil
 	} else {
 		return errors.New("Could not contact the LoadBalancer")
@@ -161,8 +159,10 @@ func(c *client) TimeoutMonitor(ch chan []byte) {
 func main() {
     runtime.GOMAXPROCS(runtime.NumCPU())
 
+    conf.GetConfig("config.json")
+
     c := new(client)
-	err := c.Init(":9000", "compute-5-1:9000")
+	err := c.Init()
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -1,15 +1,15 @@
 {
-	"LB": 			["compute-1-1"],
+	  "LB": 			  ["compute-5-1"],
     "Frontends": 	["compute-10-1","compute-10-2","compute-10-3"],
     "Backend": 		["compute-8-1"],
 
-    "ClientPort": 	"9001",
-    "LBPort": 		"8000",
+    "ClientPort": 	":9001",
+    "LBPort": 		  ":8000",
     "FrontendPort": ":9000",
     "BackendPort":	":8000",
 
     "MaxClientsPerFrontend": 	2,
-    "LeaseTime": 				1000,	
-    "ClientInitTTL": 			2,	
-    "FrontendInitTTL":			2000	
+    "LeaseTime": 				      10000,	
+    "ClientInitTTL": 			    10,	
+    "FrontendInitTTL":			  2000
 }
