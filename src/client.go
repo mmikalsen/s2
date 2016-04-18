@@ -40,6 +40,7 @@ func (c *client) Init() (error) {
     c.s.Init(conf.ClientPort)
 	c.hash = crc32.ChecksumIEEE
 
+	log.Print(conf.LB[0] + conf.LBPort)
     c.load_balancer, err = net.ResolveUDPAddr("udp", conf.LB[0] + conf.LBPort)
     if err != nil {
         return err
@@ -159,10 +160,13 @@ func(c *client) TimeoutMonitor(ch chan []byte) {
 func main() {
     runtime.GOMAXPROCS(runtime.NumCPU())
 
-    conf.GetConfig("config.json")
+	lol, err := os.Getwd()
+	log.Print(lol)
+
+    conf.GetConfig("s2/src/config.json")
 
     c := new(client)
-	err := c.Init()
+	err = c.Init()
 	if err != nil {
 		log.Fatal(err)
 	}
