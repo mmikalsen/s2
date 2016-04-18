@@ -4,8 +4,7 @@ import  (
   "log"
   "net"
   "./lib/server"
-  _"strings"
-  "strconv"
+  "./lib/config"
   "sync/atomic"
   "runtime"
   "time"
@@ -14,9 +13,7 @@ import  (
 )
 
 var (
-	LEASETIME = 10 * time.Second
-	MAXCLIENTS = int32(3)
-	PORT = ":9000"
+	conf = new(config.Configuration)
 )
 
 type route struct {
@@ -39,22 +36,22 @@ type lb struct {
 	sCh chan string
 }
 
-func(l *lb) Init(backend string) error {
+func(l *lb) Init() error {
 	l.routes = cmap.New()
 
 	l.s = new(server.UDPServer)
-	err := l.s.Init(PORT)
+	err := l.s.Init(conf.LBPort)
 	if err !=nil {
 		return err
 	}
-	l.backend = backend
+	l.backend = conf.Backend[0] + conf.BackendPort
 	l.sCh = make(chan string)
 
 
 	// Make referance to frontend servers \\
 	for i := range(l.frontends) {
 		f := &l.frontends[i]
-		f.addr, err = net.ResolveUDPAddr("udp", "compute-10-" + strconv.Itoa((i + 1)) +":9000")
+		f.addr, err = net.ResolveUDPAddr("udp", conf.Frontends[i] + conf.FrontendPort)
 		if err != nil {
 			return err
 		}
@@ -87,8 +84,11 @@ func (l *lb) NewClient(client *net.UDPAddr) (*lbFrontend, time.Time, error) {
 
 	for i := range(l.frontends) {
 		frontend := &l.frontends[i]
-		if atomic.LoadInt32(frontend.up) == 1 && atomic.LoadInt32(frontend.numClients) < MAXCLIENTS {
-			route := &route{client, frontend.addr, time.Now().Add(LEASETIME)}
+		if atomic.LoadInt32(frontend.up) == 1 && atomic.LoadInt32(frontend.numClients) < conf.MaxClientsPerFrontend {
+			route := &route{
+				client, 
+				frontend.addr, 
+				time.Now().Add(time.Duration(conf.LeaseTime) * time.Millisecond)}
 			// Timer
 			go func() {
 				time.Sleep(route.lease.Sub(time.Now()))
@@ -129,9 +129,15 @@ func (l *lb) Info() {
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
+
+	err := conf.GetConfig("config.json")
+    if err != nil {
+		log.Fatal(err)
+	}
+
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	lb := new(lb)
-	err := lb.Init("compute-8-1:8000")
+	err = lb.Init()
 	if err != nil {
 		log.Fatal(err)
 	}
