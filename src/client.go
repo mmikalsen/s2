@@ -80,7 +80,7 @@ func (c *client) recive() {
 			if err != nil {
 				log.Fatal(err)
 			}
-			c.lease, err  = time.Parse(time.UnixDate, strings.Join(lease[1:], " "))
+			c.lease, err  = time.Parse(time.Stamp, strings.Join(lease[1:], " "))
 			if err != nil {
 				log.Fatal(err)
 			}

@@ -68,13 +68,18 @@ func (l *lb) Serve() {
 			log.Fatal(err)
 		}
 		if string(msg) == "new_lease" {
+      // Notify a frontend
 			frontend, lease, err := l.NewClient(remoteAddr)
 			if err != nil {
 				log.Fatal(err)
 			}
-			l.s.Write([]byte(frontend.addr.String() + " " + lease.Format(time.UnixDate)), remoteAddr)
+      go func() {
+        l.s.Write([]byte(remoteAddr.String() + " " + lease.Format(time.Stamp)), frontend.addr)
+      }()
+
+			l.s.Write([]byte(frontend.addr.String() + " " + lease.Format(time.Stamp)), remoteAddr)
 		} else if string(msg) == "frontend_up" {
-			log.Print("NEW BACKEND: ", remoteAddr.String())
+			log.Print("NEW FRONTEND: ", remoteAddr.String())
 			l.s.Write([]byte(l.backend), remoteAddr)
 		}
 	}

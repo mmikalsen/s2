@@ -9,6 +9,7 @@ import (
     "./lib/server"
     "./lib/config"
     "net/http"
+    "github.com/streamrail/concurrent-map"
 )
 
 type HttpResponse struct {
@@ -20,7 +21,7 @@ type Frontend struct {
     s *server.UDPServer
     load_balancer *net.UDPAddr
     backend_addr string
-    clients []*net.UDPAddr
+    clients cmap.ConcurrentMap
     sCh chan string
     ttl time.Duration
 }
@@ -43,16 +44,18 @@ func (f *Frontend) Init() {
     f.sCh = make(chan string)
     go f.recive()
 
+  log.Println(f.load_balancer.String())
+
 	// send init message to lb
-	f.s.Write([]byte("frontend_up"), f.load_balancer)
+	f.s.Write([]byte("frontend_up"), f.load_balancer) //TODO: invalid memory address
 
 	msg := <-f.sCh
 
 	f.backend_addr = msg
-	f.clients = make([]*net.UDPAddr, 8)
-	for {
 
-	}
+	f.s.Write([]byte("ACK"), f.load_balancer)
+
+	f.clients = cmap.New()
 }
 
 
@@ -60,21 +63,49 @@ func (f *Frontend) Init() {
 func (f *Frontend) recive() {
 
     for {
-        fetchedKey, remoteAddr, err := f.s.Read(32)
+        body, remoteAddr, err := f.s.Read(32) //TODO: Some runtime error here
         if err != nil {
              log.Fatal(err)
         }
 		if remoteAddr.String() == f.load_balancer.String() {
-			log.Print("GOT MSG: load_balancer - " + string(fetchedKey))
-			f.sCh <- string(fetchedKey)
+      // msg: "clientAddr lease"
+      log.Print("GOT MSG: load_balancer - " + string(body))
+      if (f.clients.Count() >= MAXCLIENTS) {
+        log.Print("Client limit reached. Aborting receive")
+        return
+      }
+      msg := strings.Split(string(body), " ")
+
+      // The lease is multiple "words" in the string, so join them together again
+      lease, err  := time.Parse(time.Stamp, strings.Join(msg[1:], " "))
+			if err != nil {
+				log.Fatal(err)
+			}
+      clientAddr := msg[0]
+      f.clients.Set(clientAddr, lease)
+
+      go func() {
+        // Remove the client once the lease runs out
+				time.Sleep(lease.Sub(time.Now()))
+				f.clients.Remove(clientAddr)
+			}()
 		} else {
-			log.Print("Sending request: ", string(fetchedKey), " to backend")
-			go f.httpGet(fetchedKey, remoteAddr)
+      _, ok := f.clients.Get(remoteAddr.String())
+      if !ok {
+        log.Print("Lease has run out.. Aborting")
+        return
+			}
+
+			log.Print("Sending request: ", string(body), " to backend")
+			go f.httpGet(body, remoteAddr)
 		}
     }
 }
 
 func (f *Frontend) httpGet(key []byte, addr *net.UDPAddr) {
+  /*
+    Frontend --GET--> Backend
+    */
 	ttl := f.ttl
 	timeoutCh := make(chan bool)
 	responseCh := make(chan http.Response)
@@ -108,7 +139,7 @@ func (f *Frontend) httpGet(key []byte, addr *net.UDPAddr) {
 }
 
 func (f *Frontend) runtime(debug int) {
-	/* LOADBALANCER MSG 
+	/* LOADBALANCER MSG
 	[status:client:client...]
 	*/
 	for {
@@ -119,14 +150,15 @@ func (f *Frontend) runtime(debug int) {
 		status := clients[0]
 
 		if status == "OK" {
-			for _, _ = range(clients[1:]) {
-				// look up in hashmap //
-				// change //
-				// reset timer? //
-			}
+      for _ = range f.clients.Iter() {
+        // look up in hashmap //
+        // change //
+        // reset timer? //
+    	}
+
 		}
 
-		// print information 
+		// print information
 	}
 }
 
