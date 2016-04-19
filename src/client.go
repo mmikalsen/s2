@@ -3,9 +3,10 @@ package main
 import (
    "fmt"
    "errors"
-    "log"
+   "log"
     "./lib/server"
     "./lib/config"
+	"./lib/logger"
     "time"
     "os"
 	"hash/crc32"
@@ -29,6 +30,7 @@ type client struct {
     sCh chan bool
     ttl time.Duration
     index  cmap.ConcurrentMap
+	log *log.Logger
 	hash Hash
 }
 
@@ -40,7 +42,7 @@ func (c *client) Init() (error) {
     c.s.Init(conf.ClientPort)
 	c.hash = crc32.ChecksumIEEE
 
-	log.Print(conf.LB[0] + conf.LBPort)
+	c.log.Print(conf.LB[0] + conf.LBPort)
     c.load_balancer, err = net.ResolveUDPAddr("udp", conf.LB[0] + conf.LBPort)
     if err != nil {
         return err
@@ -54,11 +56,11 @@ func (c *client) Init() (error) {
     go c.recive()
 
 	c.s.Write([]byte("new_lease"), c.load_balancer)
-	log.Print("waiting for lb")
+	c.log.Print("waiting for lb")
 
 	// wait for conformation about frontend
 	if ok := <- c.sCh; ok {
-		log.Print("GOT " , c.frontend.String(), "as frontend")
+		c.log.Print("GOT " , c.frontend.String(), "as frontend")
 		c.ttl = time.Duration(conf.ClientInitTTL) * time.Millisecond
 		return nil
 	} else {
@@ -71,18 +73,18 @@ func (c *client) recive() {
     for {
         msg, remoteAddr, err := c.s.Read(64)
         if err != nil {
-            log.Fatal()
+            c.log.Fatal()
         }
 		//log.Print("MSG: ", string(msg))
 		if remoteAddr.String() == c.load_balancer.String() {
 			lease := strings.Split(string(msg), " ")
 			c.frontend, err = net.ResolveUDPAddr("udp", lease[0])
 			if err != nil {
-				log.Fatal(err)
+				c.log.Fatal(err)
 			}
-			c.lease, err  = time.Parse(time.Stamp, strings.Join(lease[1:], " "))
+			c.lease, err  = time.Parse(time.UnixDate, strings.Join(lease[1:], " "))
 			if err != nil {
-				log.Fatal(err)
+				c.log.Fatal(err)
 			}
 			c.sCh <- true
 		} else if remoteAddr.String() == c.frontend.String() {
@@ -112,11 +114,11 @@ func (c *client) recive() {
 func (c *client) Request(count int) int{
     hostname, err := os.Hostname()
 	if err != nil {
-		log.Fatal(err)
+		c.log.Fatal(err)
 	}
 	ip, err := net.LookupIP(hostname)
 	if err != nil {
-		log.Fatal(err)
+		c.log.Fatal(err)
 	}
     timeout := make(chan []byte, 100)
     go c.TimeoutMonitor(timeout)
@@ -160,25 +162,36 @@ func(c *client) TimeoutMonitor(ch chan []byte) {
 func main() {
     runtime.GOMAXPROCS(runtime.NumCPU())
 
-    err := conf.GetConfig("s2/src/config.json")
+    err := conf.GetConfig("config.json")
     if err != nil {
 		log.Fatal(err)
 	}
 
     c := new(client)
-	err = c.Init()
+
+	hostname, err := os.Hostname()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-    log.Print("start requesting")
+	c.log, err = logger.InitLogger("logs/client/" + hostname)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = c.Init()
+	if err != nil {
+		c.log.Fatal(err)
+	}
+
+    c.log.Print("start requesting")
 	count := 0
 	for {
 		count = c.Request(count)
-		//log.Print("Lease ran out! old: ", c.frontend)
+		c.log.Print("Lease ran out!")
 		c.s.Write([]byte("new_lease"), c.load_balancer)
 		if ok := <- c.sCh; ok {
-			//log.Print("Switching too ", c.frontend)
+			c.log.Print("new frontend: ", c.frontend.String())
 			continue
 		}
 	}

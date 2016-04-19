@@ -5,11 +5,14 @@ import  (
   "net"
   "./lib/server"
   "./lib/config"
+  "./lib/logger"
   "sync/atomic"
   "runtime"
   "time"
   "github.com/streamrail/concurrent-map"
   "errors"
+  "os"
+  "fmt"
 )
 
 var (
@@ -34,6 +37,7 @@ type lb struct {
 	s *server.UDPServer
 	backend string
 	sCh chan string
+	log *log.Logger
 }
 
 func(l *lb) Init() error {
@@ -65,21 +69,20 @@ func (l *lb) Serve() {
 	for {
 		msg, remoteAddr, err := l.s.Read(32)
 		if err != nil {
-			log.Fatal(err)
+			l.log.Fatal(err)
 		}
 		if string(msg) == "new_lease" {
-      // Notify a frontend
+			l.log.Print("New lease request from: ", remoteAddr)
 			frontend, lease, err := l.NewClient(remoteAddr)
 			if err != nil {
-				log.Fatal(err)
+				l.log.Fatal(err)
 			}
-      go func() {
-        l.s.Write([]byte(remoteAddr.String() + " " + lease.Format(time.Stamp)), frontend.addr)
-      }()
-
-			l.s.Write([]byte(frontend.addr.String() + " " + lease.Format(time.Stamp)), remoteAddr)
+			go func() {
+				l.s.Write([]byte(remoteAddr.String() + " " + lease.Format(time.UnixDate)), frontend.addr)
+			}()
+			l.s.Write([]byte(frontend.addr.String() + " " + lease.Format(time.UnixDate)), remoteAddr)
 		} else if string(msg) == "frontend_up" {
-			log.Print("NEW FRONTEND: ", remoteAddr.String())
+			l.log.Print("NEW FRONTEND: ", remoteAddr.String())
 			l.s.Write([]byte(l.backend), remoteAddr)
 		}
 	}
@@ -91,8 +94,8 @@ func (l *lb) NewClient(client *net.UDPAddr) (*lbFrontend, time.Time, error) {
 		frontend := &l.frontends[i]
 		if atomic.LoadInt32(frontend.up) == 1 && atomic.LoadInt32(frontend.numClients) < conf.MaxClientsPerFrontend {
 			route := &route{
-				client, 
-				frontend.addr, 
+				client,
+				frontend.addr,
 				time.Now().Add(time.Duration(conf.LeaseTime) * time.Millisecond)}
 			// Timer
 			go func() {
@@ -125,7 +128,7 @@ func (l *lb) Info() {
 		for i := range(l.frontends) {
 			// mainteines aka turn off not used frontends... if slots left < MAX - 2 or something
 
-			log.Printf("%s has %d clients\n", l.frontends[i].addr.String(), atomic.LoadInt32(l.frontends[i].numClients))
+			fmt.Printf("%s has %d clients\n", l.frontends[i].addr.String(), atomic.LoadInt32(l.frontends[i].numClients))
 			// propegate information to frontends?
 		}
 	}
@@ -140,11 +143,19 @@ func main() {
 		log.Fatal(err)
 	}
 
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	lb := new(lb)
-	err = lb.Init()
+	hostname, err := os.Hostname()
 	if err != nil {
 		log.Fatal(err)
+	}
+	lb.log, err = logger.InitLogger("logs/lb/" + hostname)
+	if err != nil {
+		lb.log.Fatal(err)
+	}
+
+	err = lb.Init()
+	if err != nil {
+		lb.log.Fatal(err)
 	}
 	go lb.Info()
 	lb.Serve()

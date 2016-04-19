@@ -11,7 +11,7 @@ from time import sleep
 
 httpdServeRequests = True
 latencySkew = 10
-latencyMultiplier = 5
+latencyMultiplier = 10
 
 def waitToProduce():
     tts = latencyMultiplier * random.expovariate(latencySkew)
@@ -23,7 +23,7 @@ class FrontendHttpHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     # Returns the
     def do_GET(self):
 
-        #print "waiting " + str(waitToProduce()).replace('.', ',') + " ms"
+        print "waiting " + str(waitToProduce()).replace('.', ',') + " ms"
 
         # Write header
         self.send_response(200)

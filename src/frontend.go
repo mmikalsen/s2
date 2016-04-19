@@ -1,15 +1,19 @@
 package main
 
 import (
-    "net"
-    "log"
-    "time"
+	"net"
+	"log"
+	"time"
 	"strings"
-    "runtime"
-    "./lib/server"
-    "./lib/config"
-    "net/http"
-    "github.com/streamrail/concurrent-map"
+	"runtime"
+	"os"
+	"./lib/server"
+	"./lib/config"
+	"./lib/logger"
+	"net/http"
+	"github.com/streamrail/concurrent-map"
+	"sync/atomic"
+	"fmt"
 )
 
 type HttpResponse struct {
@@ -18,42 +22,47 @@ type HttpResponse struct {
 }
 
 type Frontend struct {
-    s *server.UDPServer
-    load_balancer *net.UDPAddr
-    backend_addr string
-    clients cmap.ConcurrentMap
-    sCh chan string
-    ttl time.Duration
+	s *server.UDPServer
+	load_balancer *net.UDPAddr
+	backend_addr string
+	clients cmap.ConcurrentMap
+	numClients *int32
+	sCh chan string
+	ttl time.Duration
+	log *log.Logger
 }
 
 var (
-    conf = new(config.Configuration)
+	conf = new(config.Configuration)
+	MAXCLIENTS = 8
 )
 
 func (f *Frontend) Init() {
-    var err error
-    f.s = new(server.UDPServer)
-    f.s.Init(conf.FrontendPort)
-    f.ttl = time.Duration(conf.FrontendInitTTL) * time.Millisecond
+	var err error
+	f.s = new(server.UDPServer)
+	f.s.Init(conf.FrontendPort)
+	f.ttl = time.Duration(conf.FrontendInitTTL) * time.Millisecond
 
-    f.load_balancer, err = net.ResolveUDPAddr("udp", conf.LB[0] + conf.LBPort)
-    if err != nil {
-        log.Fatal(err)
-    }
+	f.load_balancer, err = net.ResolveUDPAddr("udp", conf.LB[0] + conf.LBPort)
+	if err != nil {
+		f.log.Fatal(err)
+	}
+	f.numClients = new(int32)
+	atomic.StoreInt32(f.numClients, 0)
 
-    f.sCh = make(chan string)
-    go f.recive()
+	f.sCh = make(chan string)
+	go f.recive()
 
-  log.Println(f.load_balancer.String())
+	f.log.Println(f.load_balancer.String())
 
 	// send init message to lb
-	f.s.Write([]byte("frontend_up"), f.load_balancer) //TODO: invalid memory address
+	//f.s.Write([]byte("frontend_up"), f.load_balancer) //TODO: invalid memory address
 
-	msg := <-f.sCh
+	//msg := <-f.sCh
 
-	f.backend_addr = msg
+	f.backend_addr = "compute-8-1:8000"
 
-	f.s.Write([]byte("ACK"), f.load_balancer)
+	//f.s.Write([]byte("ACK"), f.load_balancer)
 
 	f.clients = cmap.New()
 }
@@ -62,50 +71,52 @@ func (f *Frontend) Init() {
 
 func (f *Frontend) recive() {
 
-    for {
-        body, remoteAddr, err := f.s.Read(32) //TODO: Some runtime error here
-        if err != nil {
-             log.Fatal(err)
-        }
+	for {
+		body, remoteAddr, err := f.s.Read(64) //TODO: Some runtime error here
+		if err != nil {
+			f.log.Fatal(err)
+		}
 		if remoteAddr.String() == f.load_balancer.String() {
-      // msg: "clientAddr lease"
-      log.Print("GOT MSG: load_balancer - " + string(body))
-      if (f.clients.Count() >= MAXCLIENTS) {
-        log.Print("Client limit reached. Aborting receive")
-        return
-      }
-      msg := strings.Split(string(body), " ")
-
-      // The lease is multiple "words" in the string, so join them together again
-      lease, err  := time.Parse(time.Stamp, strings.Join(msg[1:], " "))
-			if err != nil {
-				log.Fatal(err)
+			// msg: "clientAddr lease"
+			//log.Print("GOT MSG: load_balancer - " + string(body))
+			if (atomic.LoadInt32(f.numClients) >= int32(MAXCLIENTS)) {
+				f.log.Print("Client limit reached. Aborting receive")
+				return
 			}
-      clientAddr := msg[0]
-      f.clients.Set(clientAddr, lease)
+			msg := strings.Split(string(body), " ")
 
-      go func() {
-        // Remove the client once the lease runs out
+			// The lease is multiple "words" in the string, so join them together again
+			lease, err  := time.Parse(time.UnixDate, strings.Join(msg[1:], " "))
+			if err != nil {
+				f.log.Fatal(err)
+			}
+			clientAddr := msg[0]
+			f.clients.Set(clientAddr, lease)
+			atomic.AddInt32(f.numClients, 1)
+
+			go func() {
+				// Remove the client once the lease runs out
 				time.Sleep(lease.Sub(time.Now()))
 				f.clients.Remove(clientAddr)
+				atomic.AddInt32(f.numClients, -1)
 			}()
 		} else {
-      _, ok := f.clients.Get(remoteAddr.String())
-      if !ok {
-        log.Print("Lease has run out.. Aborting")
-        return
+			_, ok := f.clients.Get(remoteAddr.String())
+			if !ok {
+				f.log.Print("Lease ran out/not authorized client")
+				return
 			}
 
-			log.Print("Sending request: ", string(body), " to backend")
+			//log.Print("Sending request: ", string(body), " to backend")
 			go f.httpGet(body, remoteAddr)
 		}
-    }
+	}
 }
 
 func (f *Frontend) httpGet(key []byte, addr *net.UDPAddr) {
-  /*
-    Frontend --GET--> Backend
-    */
+	/*
+	Frontend --GET--> Backend
+	*/
 	ttl := f.ttl
 	timeoutCh := make(chan bool)
 	responseCh := make(chan http.Response)
@@ -117,7 +128,7 @@ func (f *Frontend) httpGet(key []byte, addr *net.UDPAddr) {
 	go func() {
 		resp, err := http.Get("http://" + f.backend_addr)
 		if err != nil {
-			log.Fatal(err)
+			f.log.Fatal(err)
 		}
 		defer resp.Body.Close()
 		responseCh <- *resp
@@ -133,45 +144,39 @@ func (f *Frontend) httpGet(key []byte, addr *net.UDPAddr) {
 	case <- timeoutCh:
 		// timeout
 		f.ttl += f.ttl/10
-		log.Print("timeout")
+		f.log.Print("timeout")
 	}
 
 }
 
-func (f *Frontend) runtime(debug int) {
-	/* LOADBALANCER MSG
-	[status:client:client...]
-	*/
+func (f *Frontend) runtime() {
 	for {
-		msg := <-f.sCh
-		f.s.Write([]byte("ACK"), f.load_balancer)
-
-		clients := strings.Split(msg, ":")
-		status := clients[0]
-
-		if status == "OK" {
-      for _ = range f.clients.Iter() {
-        // look up in hashmap //
-        // change //
-        // reset timer? //
-    	}
-
-		}
-
-		// print information
+		time.Sleep(1 * time.Second)
+		fmt.Print("\033[H\033[2J")
+		fmt.Println("Number of clients: ", atomic.LoadInt32(f.numClients))
+		fmt.Print("\n\n\nCurrent ttl: ", f.ttl)
 	}
 }
 
 func main() {
-    runtime.GOMAXPROCS(runtime.NumCPU())
+	runtime.GOMAXPROCS(runtime.NumCPU())
 
-    err := conf.GetConfig("config.json")
-    if err != nil {
-        log.Fatal(err)
-    }
+	err := conf.GetConfig("config.json")
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-    frontend := new(Frontend)
-    frontend.Init()
+	frontend := new(Frontend)
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Fatal(err)
+	}
+	frontend.log, err = logger.InitLogger("logs/frontend/" + hostname)
+	if err != nil {
+		log.Fatal(err)
+	}
+	frontend.Init()
+	frontend.runtime()
 }

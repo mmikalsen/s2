@@ -2,17 +2,17 @@ package logger
 
 import (
     "log"
+	"os"
+	"io"
 )
 
-type logS struct {
-    log *log.Logger
-}
 
-func (logS) Init(filepath string) {
-    file, err := os.Create(filepath)
+func InitLogger(filepath string) (*log.Logger, error){
+    file, err := os.Create(filepath + ".log")
     if err != nil {
-        log.Fatal(err)
+		return nil, err
     }
-    logw := io.Writer(file)
-    logS.log = log.New(logw, "*", log.Lshortfile)
+    logwriter := io.Writer(file)
+	logger := log.New(logwriter, "", log.LstdFlags | log.Lshortfile)
+	return logger, nil
 }
