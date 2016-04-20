@@ -66,7 +66,7 @@ func (c *client) Init() (error) {
 	c.log.Print("waiting for lb")
 
 	// wait for conformation about frontend
-	if ok := <- c.sCh; ok {
+	if ok := <-c.sCh; ok {
 		c.log.Print("GOT " , c.frontend.String(), "as frontend")
 		c.ttl = time.Duration(conf.ClientInitTTL) * time.Millisecond
 		return nil
@@ -142,12 +142,12 @@ func (c *client) Request(count int) int{
 
 		c.index.Set(string(key),ttl)
 		//log.Print("Sent: ", key, "- expire: ", ttl)
-		fmt.Printf("\x1b[34;1m■")
+		fmt.Printf(BLUE + "■" + ENDC)
 		c.s.Write(key, c.frontend)
 
 		select {
 		case <- timeout:
-			fmt.Printf("\x1b[31;1m■")
+			fmt.Printf(RED + "■" + ENDC)
 			c.ttl = c.ttl + c.ttl/10
 			//log.Print("TimeOut")
 		case <- c.rCh:
