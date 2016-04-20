@@ -19,6 +19,11 @@ import (
 
 var(
 	conf = new(config.Configuration)
+
+	BLUE string = "\033[94m"
+	GREEN string = "\033[92m"
+	RED string = "\033[91m"
+	ENDC string = "\033[0m"
 )
 
 type Hash func(data []byte) uint32
@@ -99,11 +104,11 @@ func (c *client) recive() {
 				expire, _ := val.(time.Time)
 				if expire.After(t1) {
 					c.ttl -= c.ttl/16
-					fmt.Printf("\x1b[32;1m■")
+					fmt.Printf(GREEN + "■" + ENDC)
 					//log.Print(string(fetchedKey), ": ok - current ttl: ", c.ttl)
 				} else {
 					c.ttl += c.ttl/4
-					fmt.Printf("\x1b[0m■")
+					fmt.Printf("■")
 					//log.Print(string(fetchedKey), "ttl failed by:", t1.Sub(expire))
 				}
 			}
@@ -134,7 +139,7 @@ func (c *client) Request(count int) int{
 
         c.index.Set(string(key),ttl)
         //log.Print("Sent: ", key, "- expire: ", ttl)
-        fmt.Printf("\x1b[34;1m■")
+        fmt.Printf(BLUE + "■" + ENDC)
         c.s.Write(key, c.frontend)
 
 		time.Sleep(2 * time.Second)
@@ -152,7 +157,7 @@ func(c *client) TimeoutMonitor(ch chan []byte) {
     for {
         signal := <-ch
         if _, ok := c.index.Get(string(signal)); ok {
-            fmt.Printf("\x1b[31;1m■")
+            fmt.Printf(RED + "■" + ENDC)
             c.ttl = c.ttl + c.ttl/10
             //log.Print("TimeOut")
         }
@@ -161,6 +166,7 @@ func(c *client) TimeoutMonitor(ch chan []byte) {
 
 func main() {
     runtime.GOMAXPROCS(runtime.NumCPU())
+
 
     err := conf.GetConfig("config.json")
     if err != nil {
