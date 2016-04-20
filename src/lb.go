@@ -13,6 +13,7 @@ import  (
   "errors"
   "os"
   "fmt"
+  "flag"
 )
 
 var (
@@ -138,7 +139,13 @@ func (l *lb) Info() {
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	err := conf.GetConfig("config.json")
+	// Handle command line arguments
+	var confFile string
+	flag.StringVar(&confFile, "c", "config.json", "Configuration file name") // src/config.json is default 
+	flag.Parse()
+
+	// Read configurations from file
+    err := conf.GetConfig(confFile)
     if err != nil {
 		log.Fatal(err)
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/streamrail/concurrent-map"
 	"sync/atomic"
 	"fmt"
+    "flag"
 )
 
 type HttpResponse struct {
@@ -162,10 +163,16 @@ func (f *Frontend) runtime() {
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	err := conf.GetConfig("config.json")
-	if err != nil {
-		log.Fatal(err)
-	}
+    // Handle command line arguments
+    var confFile string
+    flag.StringVar(&confFile, "c", "config.json", "Configuration file name") // src/config.json is default 
+    flag.Parse()
+
+    // Read configurations from file
+    err := conf.GetConfig(confFile)
+    if err != nil {
+        log.Fatal(err)
+    }
 
 
 	frontend := new(Frontend)
