@@ -34,7 +34,6 @@ type Frontend struct {
 
 var (
 	conf = new(config.Configuration)
-	MAXCLIENTS = 8
 )
 
 func (f *Frontend) Init() {
@@ -60,7 +59,7 @@ func (f *Frontend) Init() {
 
 	//msg := <-f.sCh
 
-	f.backend_addr = "compute-8-1:8000"
+	f.backend_addr = conf.Backend[0] + conf.BackendPort
 
 	//f.s.Write([]byte("ACK"), f.load_balancer)
 
@@ -79,7 +78,7 @@ func (f *Frontend) recive() {
 		if remoteAddr.String() == f.load_balancer.String() {
 			// msg: "clientAddr lease"
 			//log.Print("GOT MSG: load_balancer - " + string(body))
-			if (atomic.LoadInt32(f.numClients) >= int32(MAXCLIENTS)) {
+			if (atomic.LoadInt32(f.numClients) >= int32(conf.MaxClientsPerFrontend)) {
 				f.log.Print("Client limit reached. Aborting receive")
 				return
 			}
