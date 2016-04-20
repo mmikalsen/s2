@@ -127,7 +127,8 @@ func (f *Frontend) httpGet(key []byte, addr *net.UDPAddr) {
 	go func() {
 		resp, err := http.Get("http://" + f.backend_addr)
 		if err != nil {
-			f.log.Fatal(err)
+			f.log.Print(err)
+			return
 		}
 		defer resp.Body.Close()
 		responseCh <- *resp
@@ -140,6 +141,7 @@ func (f *Frontend) httpGet(key []byte, addr *net.UDPAddr) {
 			return
 		}
 		f.s.Write(key, addr)
+		f.ttl -= f.ttl/20
 	case <- timeoutCh:
 		// timeout
 		f.ttl += f.ttl/10

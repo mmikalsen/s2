@@ -10,6 +10,6 @@
 
     "MaxClientsPerFrontend": 	2,
     "LeaseTime": 				      10000,	
-    "ClientInitTTL": 			    10,	
+    "ClientInitTTL": 			    2000,	
     "FrontendInitTTL":			  2000
 }

@@ -5,7 +5,6 @@ import (
     "net"
     "net/http"
     "errors"
-	"time"
 )
 
 type UDPServer struct {
@@ -28,7 +27,7 @@ func (s *UDPServer) Init(port string) error {
     }
 
 	s.Client = http.Client{
-		    Timeout: time.Duration(0),
+		    Timeout: 0,
 	}
 
     return nil

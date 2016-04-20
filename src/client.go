@@ -1,18 +1,18 @@
 package main
 
 import (
-   "fmt"
-   "errors"
-   "log"
-    "./lib/server"
-    "./lib/config"
+	"fmt"
+	"errors"
+	"log"
+	"./lib/server"
+	"./lib/config"
 	"./lib/logger"
-    "time"
-    "os"
+	"time"
+	"os"
 	"hash/crc32"
-    "strconv"
-    "net"
-    "runtime"
+	"strconv"
+	"net"
+	"runtime"
 	"strings"
 	"github.com/streamrail/concurrent-map"
 )
@@ -28,37 +28,39 @@ var(
 
 type Hash func(data []byte) uint32
 type client struct {
-    s *server.UDPServer
-    load_balancer *net.UDPAddr
-    frontend *net.UDPAddr
+	s *server.UDPServer
+	load_balancer *net.UDPAddr
+	frontend *net.UDPAddr
 	lease time.Time
-    sCh chan bool
-    ttl time.Duration
-    index  cmap.ConcurrentMap
+	sCh chan bool
+	ttl time.Duration
+	index  cmap.ConcurrentMap
 	log *log.Logger
 	hash Hash
+	rCh chan bool
 }
 
 func (c *client) Init() (error) {
-    var err error
+	var err error
 
 
-    c.s = new(server.UDPServer)
-    c.s.Init(conf.ClientPort)
+	c.s = new(server.UDPServer)
+	c.s.Init(conf.ClientPort)
 	c.hash = crc32.ChecksumIEEE
 
 	c.log.Print(conf.LB[0] + conf.LBPort)
-    c.load_balancer, err = net.ResolveUDPAddr("udp", conf.LB[0] + conf.LBPort)
-    if err != nil {
-        return err
-    }
+	c.load_balancer, err = net.ResolveUDPAddr("udp", conf.LB[0] + conf.LBPort)
+	if err != nil {
+		return err
+	}
 
-    c.sCh = make(chan bool)
-    // index data structure
-    c.index = cmap.New()
+	c.sCh = make(chan bool)
+	c.rCh = make(chan bool)
+	// index data structure
+	c.index = cmap.New()
 
-    // start listing to udp stream
-    go c.recive()
+	// start listing to udp stream
+	go c.recive()
 
 	c.s.Write([]byte("new_lease"), c.load_balancer)
 	c.log.Print("waiting for lb")
@@ -75,11 +77,11 @@ func (c *client) Init() (error) {
 
 func (c *client) recive() {
 
-    for {
-        msg, remoteAddr, err := c.s.Read(64)
-        if err != nil {
-            c.log.Fatal()
-        }
+	for {
+		msg, remoteAddr, err := c.s.Read(64)
+		if err != nil {
+			c.log.Fatal()
+		}
 		//log.Print("MSG: ", string(msg))
 		if remoteAddr.String() == c.load_balancer.String() {
 			lease := strings.Split(string(msg), " ")
@@ -105,6 +107,7 @@ func (c *client) recive() {
 				if expire.After(t1) {
 					c.ttl -= c.ttl/16
 					fmt.Printf(GREEN + "■" + ENDC)
+					c.rCh <- true
 					//log.Print(string(fetchedKey), ": ok - current ttl: ", c.ttl)
 				} else {
 					c.ttl += c.ttl/4
@@ -112,12 +115,12 @@ func (c *client) recive() {
 					//log.Print(string(fetchedKey), "ttl failed by:", t1.Sub(expire))
 				}
 			}
-        }
-    }
+		}
+	}
 }
 
 func (c *client) Request(count int) int{
-    hostname, err := os.Hostname()
+	hostname, err := os.Hostname()
 	if err != nil {
 		c.log.Fatal(err)
 	}
@@ -125,32 +128,39 @@ func (c *client) Request(count int) int{
 	if err != nil {
 		c.log.Fatal(err)
 	}
-    timeout := make(chan []byte, 100)
-    go c.TimeoutMonitor(timeout)
+	timeout := make(chan []byte)
+	//go c.TimeoutMonitor(timeout)
 
-    for i := count; ;i++{
-        key := []byte(strconv.FormatUint(uint64(c.hash(ip[0])), 10) + " " + strconv.Itoa(i))
-        ttl := time.Now().Add(c.ttl)
-        go func() {
-            tKey := key
-            time.Sleep(c.ttl)
-            timeout <- tKey
-        }()
+	for i := count; ;i++{
+		key := []byte(strconv.FormatUint(uint64(c.hash(ip[0])), 10) + " " + strconv.Itoa(i))
+		ttl := time.Now().Add(c.ttl)
+		go func() {
+			tKey := key
+			time.Sleep(c.ttl)
+			timeout <- tKey
+		}()
 
-        c.index.Set(string(key),ttl)
-        //log.Print("Sent: ", key, "- expire: ", ttl)
-        fmt.Printf(BLUE + "■" + ENDC)
-        c.s.Write(key, c.frontend)
+		c.index.Set(string(key),ttl)
+		//log.Print("Sent: ", key, "- expire: ", ttl)
+		fmt.Printf("\x1b[34;1m■")
+		c.s.Write(key, c.frontend)
 
-		time.Sleep(2 * time.Second)
-		
+		select {
+		case <- timeout:
+			fmt.Printf("\x1b[31;1m■")
+			c.ttl = c.ttl + c.ttl/10
+			//log.Print("TimeOut")
+		case <- c.rCh:
+			c.log.Print("recv")
+		}
+
 		t1 := time.Now()
 		if c.lease.After(t1) {
 			continue
 		} else {
 			return i + 1
 		}
-    }
+	}
 }
 
 func(c *client) TimeoutMonitor(ch chan []byte) {
@@ -164,16 +174,16 @@ func(c *client) TimeoutMonitor(ch chan []byte) {
     }
 }
 
-func main() {
-    runtime.GOMAXPROCS(runtime.NumCPU())
 
+func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
 
     err := conf.GetConfig("config.json")
     if err != nil {
 		log.Fatal(err)
 	}
 
-    c := new(client)
+	c := new(client)
 
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -190,7 +200,7 @@ func main() {
 		c.log.Fatal(err)
 	}
 
-    c.log.Print("start requesting")
+	c.log.Print("start requesting")
 	count := 0
 	for {
 		count = c.Request(count)
@@ -201,5 +211,6 @@ func main() {
 			continue
 		}
 	}
+
 
 }

@@ -2,17 +2,17 @@
 
 #executable
 dir="`pwd`"
-executable="/frontend.go"
+executable="frontend.go"
 
 if [ "$1" == "-r" ]; then
-    go build $dir$executable
-    executable="/frontend"
+    go build $executable
+    executable="frontend"
     
     echo $dir$executable
     echo "Booting Frontends"
     for ((i = 1; i <= 3; i++)); do
         echo "booting compute-10-${i}"
-        nohup ssh "compute-10-${i}" bash -c "'$dir$executable'" &
+        nohup ssh "compute-10-${i}" bash -c "'cd $dir; ls; ./$executable'" &
     done
 else 
     for ((i = 1; i <= 3; i++)); do

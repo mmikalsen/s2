@@ -2,18 +2,18 @@
 
 #executable
 dir="`pwd`"
-executable="/client.go"
+executable="client.go"
 
 if [ "$1" == "-r" ]; then
-    go build $dir$executable
-    executable="/client"
+    go build $executable
+    executable="client"
 
     echo "starting on $2 nodes"
 
     for ((i = 2; i <= $2; i++)); do
         for ((j = 1; j <= 3; j++)); do
             echo "starting compute-${i}-${j}"
-            nohup ssh "compute-${i}-${j}" bash -c "'$dir$executable'" &
+            nohup ssh "compute-${i}-${j}" bash -c "'cd $dir; ./$executable'" &
         done
     done
 
