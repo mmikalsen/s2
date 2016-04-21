@@ -179,7 +179,9 @@ func (c *client) Request(count int) int{
 }
 
 func (c *client) CheckLease() bool{
-			t1 := time.Now()
+		for !c.running {} //wait for start signal
+		
+		t1 := time.Now()
 		if c.lease.After(t1) {
 			return true
 		} else {
@@ -232,7 +234,7 @@ func main() {
 			c.RenewLease()
 			if ok := <- c.sCh; ok {
 				c.log.Print("new frontend: ", c.frontend.String())
-			}			
+			}
 		}
 	}
 }
