@@ -3,7 +3,7 @@
     "Frontends": 	["localhost","localhost","localhost"],
     "Backend": 		["localhost"],
 
-    "ClientPort": 	":40000",
+    "ClientPort": 	":9000",
     "LBPort": 		":40001",
     "FrontendPort": ":40002",
     "BackendPort":	":8000",
