@@ -7,6 +7,7 @@ import (
 
 type Configuration struct {
 	// HOSTS
+    Hostfile string
     LB    []string
     Frontends []string
     Backend []string
