@@ -10,7 +10,7 @@ import string
 from time import sleep
 
 httpdServeRequests = True
-latencySkew = 10
+latencySkew = 5
 latencyMultiplier = 5
 
 def waitToProduce():
@@ -97,5 +97,5 @@ if __name__ == '__main__':
         print "Error: unable to http server thread"
 
     # Wait for server thread to exit
-    server_thread.join(100)
+    server_thread.join(1000)
     httpd.stop()

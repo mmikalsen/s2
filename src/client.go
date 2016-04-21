@@ -16,6 +16,7 @@ import (
 	"strings"
 	"github.com/streamrail/concurrent-map"
 	"flag"
+    ui "github.com/gizak/termui"
 )
 
 var(
@@ -181,7 +182,7 @@ func main() {
 
 	// Handle command line arguments
 	var confFile string
-	flag.StringVar(&confFile, "c", "config.json", "Configuration file name") // src/config.json is default 
+	flag.StringVar(&confFile, "c", "config.json", "Configuration file name") // src/config.json is default
 	flag.Parse()
 
 	// Read configurations from file

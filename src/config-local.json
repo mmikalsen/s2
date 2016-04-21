@@ -8,7 +8,7 @@
     "FrontendPort": ":40002",
     "BackendPort":	":8000",
 
-    "MaxClientsPerFrontend":    2,
+    "MaxClientsPerFrontend":    8,
     "LeaseTime":                10000,	
     "ClientInitTTL":            2000,	
     "FrontendInitTTL":          2000
