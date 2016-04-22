@@ -1,15 +1,16 @@
 {
-    "LB":           ["localhost"],
-    "Frontends": 	["localhost","localhost","localhost"],
-    "Backend": 		["localhost"],
+  "Hostfile":               "hostfile",
+  "LB":                     ["localhost"],
+  "Frontends":              ["localhost","localhost","localhost"],
+  "Backend":                ["localhost"],
 
-    "ClientPort": 	":40000",
-    "LBPort": 		":40001",
-    "FrontendPort": ":40002",
-    "BackendPort":	":8000",
+  "ClientPort":             ":40000",
+  "LBPort":                 ":40001",
+  "FrontendPort":           ":40002",
+  "BackendPort":            ":8000",
 
-    "MaxClientsPerFrontend":    8,
-    "LeaseTime":                10000,	
-    "ClientInitTTL":            2000,	
-    "FrontendInitTTL":          2000
+  "MaxClientsPerFrontend":  8,
+  "LeaseTime":              10000,
+  "ClientInitTTL":          2000,
+  "FrontendInitTTL":        2000
 }
