@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"errors"
+	//"errors"
 	"log"
 	"./lib/server"
 	"./lib/config"
@@ -16,12 +16,13 @@ import (
 	"strings"
 	"github.com/streamrail/concurrent-map"
 	"flag"
+	"github.com/beevik/ntp"
     //ui "github.com/gizak/termui"
 )
 
 var(
 	conf = new(config.Configuration)
-
+	ntpServer = "ntp.uit.no"
 	BLUE string = "\033[94m"
 	GREEN string = "\033[92m"
 	RED string = "\033[91m"
@@ -37,14 +38,16 @@ type client struct {
 	load_balancer *net.UDPAddr
 	frontend *net.UDPAddr
 	lease time.Time
-	sCh chan bool
+	newLeaseCh chan bool
 	ttl time.Duration
 	index  cmap.ConcurrentMap
 	log *log.Logger
 	hash Hash
-	rCh chan bool
+	msgRecivedCh chan bool
 	running bool
+	startupSignalCh chan bool
 	localip []net.IP
+
 }
 
 func (c *client) Init() (error) {
@@ -67,131 +70,152 @@ func (c *client) Init() (error) {
 	}
 	c.localip, err = net.LookupIP(hostname)
 	if err != nil {
-		c.log.Fatal(err)
-	}
+			c.log.Fatal(err)
+		}
 
-	c.running = true
-	c.sCh = make(chan bool)
-	c.rCh = make(chan bool)
-	// index data structure
-	c.index = cmap.New()
-
-	// start listing to udp stream
-	go c.recive()
-
-	c.s.Write([]byte("new_lease"), c.load_balancer)
-	c.log.Print("waiting for lb")
-
-	// wait for conformation about frontend
-	if ok := <-c.sCh; ok {
-		c.log.Print("GOT " , c.frontend.String(), "as frontend")
+		c.running = true
+		c.newLeaseCh = make(chan bool)
+		c.msgRecivedCh = make(chan bool)
+		c.startupSignalCh = make(chan bool)
+		// index data structure
+		c.index = cmap.New()
 		c.ttl = time.Duration(conf.ClientInitTTL) * time.Millisecond
+
+		// start listing to udp stream
+		go c.recive()
+
 		return nil
-	} else {
-		return errors.New("Could not contact the LoadBalancer")
 	}
-}
 
-func (c *client) recive() {
+	func (c *client) recive() {
 
-	for {
-		msg, remoteAddr, err := c.s.Read(64)
-		if err != nil {
-			c.log.Fatal()
-		}
-		//log.Print("MSG: ", string(msg))
-		if remoteAddr.String() == c.load_balancer.String() {
-			lease := strings.Split(string(msg), " ")
-			c.frontend, err = net.ResolveUDPAddr("udp", lease[0])
+		for {
+			msg, remoteAddr, err := c.s.Read(64)
 			if err != nil {
-				c.log.Fatal(err)
+				c.log.Fatal()
 			}
-			c.lease, err  = time.Parse(time.UnixDate, strings.Join(lease[1:], " "))
-			if err != nil {
-				c.log.Fatal(err)
-			}
-			c.sCh <- true
-		} else if remoteAddr.String() == c.frontend.String() {
-			t1 := time.Now()
-			if val, ok := c.index.Get(string(msg)); ok {
-
-				/* Start a goroutine to remove the key from trie */
-				go func() {
-					c.index.Remove(string(msg))
-				}()
-
-				expire, _ := val.(time.Time)
-				if expire.After(t1) {
-					c.ttl -= c.ttl/16
-					fmt.Printf(GREEN + "■" + ENDC)
-					c.rCh <- true
-					//log.Print(string(fetchedKey), ": ok - current ttl: ", c.ttl)
-				} else {
-					c.ttl += c.ttl/4
-					fmt.Printf("■")
-					//log.Print(string(fetchedKey), "ttl failed by:", t1.Sub(expire))
+			//log.Print("MSG: ", string(msg))
+			if remoteAddr.String() == c.load_balancer.String() {
+				lease := strings.Split(string(msg), " ")
+				c.frontend, err = net.ResolveUDPAddr("udp", lease[0])
+				if err != nil {
+					c.log.Fatal(err)
 				}
+				c.lease, err  = time.Parse(time.UnixDate, strings.Join(lease[1:], " "))
+				if err != nil {
+					c.log.Fatal(err)
+				}
+				c.log.Print("GOT " , c.frontend.String(), "as frontend")
+				c.newLeaseCh <- true
+			} else if remoteAddr.String() == c.frontend.String() {
+				t1 := time.Now()
+				if val, ok := c.index.Get(string(msg)); ok {
+
+					/* Start a goroutine to remove the key from trie */
+					go func() {
+						c.index.Remove(string(msg))
+					}()
+
+					expire, _ := val.(time.Time)
+					if expire.After(t1) {
+						c.ttl -= time.Duration(10 * time.Millisecond)
+						fmt.Printf(GREEN + "■" + ENDC)
+						c.msgRecivedCh <- true
+						//log.Print(string(fetchedKey), ": ok - current ttl: ", c.ttl)
+					} else {
+						c.ttl += time.Duration(100 * time.Millisecond)
+						fmt.Printf("■")
+						//log.Print(string(fetchedKey), "ttl failed by:", t1.Sub(expire))
+					}
+				}
+			} else if string(msg) == START {
+				c.log.Print("START signal recived, now running")
+				c.running = true
+				c.startupSignalCh <- true
+			} else if string(msg) == STOP {
+				c.log.Print("STOP signal recived, now stopped")
+				c.running = false
+			} else if string(msg) == KILL {
+				c.log.Print("KILL signal recived, shutting down")
+				os.Exit(0)
+			} else {
+				c.log.Print("Unknown message recived", string(msg))
 			}
-		} else if string(msg) == START {
-			c.log.Print("START signal recived, now running")
-			c.running = true
-		} else if string(msg) == STOP {
-			c.log.Print("STOP signal recived, now stopped")
-			c.running = false
-		} else if string(msg) == KILL {
-			c.log.Print("KILL signal recived, shutting down")
-			os.Exit(0)
-		} else {
-			c.log.Print("Unknown message recived", string(msg))
 		}
 	}
-}
 
-func (c *client) Request(count int) int{
-	timeout := make(chan []byte)
+	func (c *client) Request(count int) int{
+		timeout := make(chan []byte)
 
-	//for i := count; ;i++{
-		key := []byte(strconv.FormatUint(uint64(c.hash(c.localip[0])), 10) + " " + strconv.Itoa(count))
-		ttl := time.Now().Add(c.ttl)
-		go func() {
-			tKey := key
-			time.Sleep(c.ttl)
-			timeout <- tKey
-		}()
+		//for i := count; ;i++{
+			key := []byte(strconv.FormatUint(uint64(c.hash(c.localip[0])), 10) + " " + strconv.Itoa(count))
+			t1, err := ntp.Time(ntpServer)
+			if err != nil {
+				c.log.Fatal(err)
+			}
+			ttl := t1.Add(c.ttl)
+			
+			go func() {
+				tKey := key
+				time.Sleep(c.ttl)
+				timeout <- tKey
+			}()
 
-		c.index.Set(string(key),ttl)
-		//log.Print("Sent: ", key, "- expire: ", ttl)
-		fmt.Printf(BLUE + "■" + ENDC)
-		c.s.Write(key, c.frontend)
+			c.index.Set(string(key),ttl)
+			//log.Print("Sent: ", key, "- expire: ", ttl)
+			fmt.Printf(BLUE + "■" + ENDC)
+			c.s.Write(key, c.frontend)
 
-		select {
-		case <- timeout:
-			fmt.Printf(RED + "■" + ENDC)
-			c.ttl = c.ttl + c.ttl/10
-			c.log.Print("TimeOut")
-		case <- c.rCh:
-			c.log.Print("recv")
+			select {
+			case <- timeout:
+				fmt.Printf(RED + "■" + ENDC)
+				c.ttl = c.ttl + c.ttl/10
+				c.log.Print("TimeOut")
+			case <- c.msgRecivedCh:
+				c.log.Print("recv")
+			}
+			count ++
+
+			return count
+
+	}
+
+	func (c *client) CheckLease() bool{
+			
+		t1, err := ntp.Time(ntpServer)
+		if err != nil {
+			log.Fatal(err)
 		}
-		count ++
-
-		return count
-
-}
-
-func (c *client) CheckLease() bool{
-		for !c.running {} //wait for start signal
-		
-		t1 := time.Now()
+		c.log.Print(c.lease.String() + " " + t1.String())
 		if c.lease.After(t1) {
 			return true
 		} else {
-			c.log.Print("Lease ran out!")
 			return false
 		}
 }
 
-func (c *client) RenewLease() {
-	c.s.Write([]byte("new_lease"), c.load_balancer)
+func (c *client) RenewLease(retry bool,timeoutMS int) bool{
+	timeout := make(chan bool)
+
+	for retry && c.running{
+		c.log.Print("requesting lease from: " + c.load_balancer.String())
+		c.s.Write([]byte("new_lease"), c.load_balancer)
+		c.log.Print("new lease request")
+		go func() {
+					time.Sleep(time.Duration(10 * time.Second))
+			timeout <- true
+		}()
+		
+		select{
+		case <-c.newLeaseCh:
+			c.log.Print("new frontend lease recived: ", c.frontend.String())
+			return true
+		case <-timeout:
+			c.log.Print("lease request timeout ")
+			continue 
+		}
+	}
+	return false
 }
 
 func main() {
@@ -203,8 +227,8 @@ func main() {
 	flag.Parse()
 
 	// Read configurations from file
-    err := conf.GetConfig(confFile)
-    if err != nil {
+    	err := conf.GetConfig(confFile)
+    	if err != nil {
 		log.Fatal(err)
 	}
 
@@ -228,13 +252,15 @@ func main() {
 	c.log.Print("start requesting")
 	count := 0
 	for {
+		if !c.running {
+			if <-c.startupSignalCh {} //wait for start signal
+		} 
+
 		if c.CheckLease() {
 			count = c.Request(count)
 		} else {
-			c.RenewLease()
-			if ok := <- c.sCh; ok {
-				c.log.Print("new frontend: ", c.frontend.String())
-			}
+			c.RenewLease(true,10)
 		}
+
 	}
 }

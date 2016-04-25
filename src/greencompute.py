@@ -22,8 +22,9 @@ class FrontendHttpHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
     # Returns the
     def do_GET(self):
-
-        print "waiting " + str(waitToProduce()).replace('.', ',') + " ms"
+  
+        ttl = waitToProduce()
+        print "waiting " + str(ttl).replace('.', ',') + " s"
 
         # Write header
         self.send_response(200)

@@ -42,7 +42,7 @@ func addClients(hostfile string){
   for scanner.Scan() {
     clients = append(clients, scanner.Text())
     i++
-    if(i > 20){break}
+    if(i > 25){break}
   }
   numClients = i
 }

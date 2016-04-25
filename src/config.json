@@ -1,16 +1,16 @@
 {
     "Hostfile":                 "hostfile",
-    "LB":                       ["compute-5-1"],
-    "Frontends":                ["compute-10-1","compute-10-2","compute-10-3"],
-    "Backend":                  ["compute-8-1"],
+    "LB":                       ["tile-3-0"],
+    "Frontends":                ["tile-3-1","tile-3-2","tile-3-3"],
+    "Backend":                  ["tile-1-0"],
 
-    "ClientPort":               ":9000",
-    "LBPort":                   ":9000",
-    "FrontendPort":             ":9000",
+    "ClientPort":               ":43001",
+    "LBPort":                   ":43002",
+    "FrontendPort":             ":43003",
     "BackendPort":              ":8000",
 
-    "MaxClientsPerFrontend":    2,
+    "MaxClientsPerFrontend":    8,
     "LeaseTime":                10000,
-    "ClientInitTTL":            2000,
-    "FrontendInitTTL":          2000
+    "ClientInitTTL":            17000,
+    "FrontendInitTTL":          14000
 }

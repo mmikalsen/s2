@@ -4,7 +4,6 @@ package server
 import (
     "net"
     "net/http"
-    "errors"
 )
 
 type UDPServer struct {
@@ -45,16 +44,4 @@ func (s *UDPServer) Read(b int) ([]byte, *net.UDPAddr, error) {
          return nil, nil, err
     }
     return buf[0:n], addr, nil
-}
-
-func(s *UDPServer) http_request(addr string) (error) {
-    resp, err := s.Client.Get(addr)
-    if err != nil {
-         return err
-    }
-
-    if status := resp.Header.Get("status"); status != "200" {
-        return errors.New(status + "not valied HTTP status")
-    }
-    return nil
 }

@@ -5,6 +5,7 @@ import  (
     "net"
     "./lib/server"
     "./lib/config"
+    "strings"
     "./lib/logger"
     "sync/atomic"
     "runtime"
@@ -14,11 +15,13 @@ import  (
     "os"
     "flag"
     ui "github.com/gizak/termui"
+    "github.com/beevik/ntp"
     _"math/rand"
 )
 
 var (
     conf = new(config.Configuration)
+    ntpServer = "ntp.uit.no"
 )
 
 type route struct {
@@ -80,11 +83,19 @@ func (l *lb) Serve() {
             }
             go func() {
                 l.s.Write([]byte(remoteAddr.String() + " " + lease.Format(time.UnixDate)), frontend.addr)
-            }()
+		    }()
             l.s.Write([]byte(frontend.addr.String() + " " + lease.Format(time.UnixDate)), remoteAddr)
 
-            l.eCh <- remoteAddr.String() + " Assigned to " + frontend.addr.String()
-            l.log.Print(remoteAddr.String() + " Assigned to " + frontend.addr.String())
+	    remoteHost, err := net.LookupAddr(strings.Split(remoteAddr.String(), ":")[0])
+            if err != nil {
+		l.log.Print(err)
+	    }
+	    frontendHost, err := net.LookupAddr(strings.Split(frontend.addr.String(), ":")[0])
+	    if err != nil {
+		l.log.Print(err)
+	    }
+            l.eCh <- remoteHost[0] + " Assigned to " + frontendHost[0]
+            l.log.Print(remoteHost[0] + " Assigned to " + frontendHost[0])
 
         // FIXME -- Make the Frontend contact the LB when starting up -- \\
         } else if string(msg) == "frontend_up" {
@@ -99,16 +110,24 @@ func (l *lb) NewClient(client *net.UDPAddr) (*lbFrontend, time.Time, error) {
     for i := range(l.frontends) {
         frontend := &l.frontends[i]
         if atomic.LoadInt32(frontend.up) == 1 && atomic.LoadInt32(frontend.numClients) < conf.MaxClientsPerFrontend {
+	    t1, err := ntp.Time(ntpServer)
+	    if err != nil {
+		log.Fatal(err)
+	    }
             route := &route{
                 client,
                 frontend.addr,
-                time.Now().Add(time.Duration(conf.LeaseTime) * time.Millisecond)}
+                t1.Add(time.Duration(conf.LeaseTime) * time.Millisecond)}
                 // Timer
                 go func() {
-                    time.Sleep(route.lease.Sub(time.Now()))
+                    time.Sleep(route.lease.Sub(t1))
                     l.routes.Remove(client.String())
                     atomic.AddInt32(frontend.numClients, -1)
-                    l.eCh <- client.String() + " - Lease ran out!"
+		    clientHost, err := net.LookupAddr(strings.Split(client.String(), ":")[0]
+		    if nil != nil {
+			l.log.Print(err)
+		    }
+                    l.eCh <- clientHost + " - Lease ran out!"
                 }()
                 l.routes.Set(client.String(), route)
                 atomic.AddInt32(frontend.numClients, 1)

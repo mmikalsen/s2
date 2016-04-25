@@ -15,6 +15,7 @@ import (
     "sync/atomic"
     "flag"
     ui "github.com/gizak/termui"
+    "github.com/beevik/ntp"
     "strconv"
 )
 
@@ -32,10 +33,13 @@ type Frontend struct {
     sCh chan string
     ttl time.Duration
     log *log.Logger
+	nRequests int
+	nTimeouts int
 }
 
 var (
     conf = new(config.Configuration)
+    ntpServer = "ntp.uit.no"
 )
 
 func (f *Frontend) Init() {
@@ -55,16 +59,7 @@ func (f *Frontend) Init() {
     go f.recive()
 
     f.log.Println(f.load_balancer.String())
-
-    // send init message to lb
-    //f.s.Write([]byte("frontend_up"), f.load_balancer) //TODO: invalid memory address
-
-    //msg := <-f.sCh
-
     f.backend_addr = conf.Backend[0] + conf.BackendPort
-
-    //f.s.Write([]byte("ACK"), f.load_balancer)
-
     f.clients = cmap.New()
 }
 
@@ -97,7 +92,11 @@ func (f *Frontend) recive() {
 
             go func() {
                 // Remove the client once the lease runs out
-                time.Sleep(lease.Sub(time.Now()))
+		t1, err := ntp.Time(ntpServer)
+		if err != nil {
+			f.log.Fatal(err)
+		}
+                time.Sleep(lease.Sub(t1))
                 f.clients.Remove(clientAddr)
                 atomic.AddInt32(f.numClients, -1)
             }()
@@ -121,13 +120,15 @@ func (f *Frontend) httpGet(key []byte, addr *net.UDPAddr) {
     ttl := f.ttl
     timeoutCh := make(chan bool)
     responseCh := make(chan http.Response)
+	f.nRequests++
 
     go func() {
         time.Sleep(ttl)
         timeoutCh <- true
     }()
     go func() {
-        resp, err := http.Get("http://" + f.backend_addr)
+		f.s.Client.Timeout = f.ttl
+        resp, err := f.s.Client.Get("http://" + f.backend_addr)
         if err != nil {
             f.log.Print(err)
             return
@@ -140,14 +141,16 @@ func (f *Frontend) httpGet(key []byte, addr *net.UDPAddr) {
     case r := <-responseCh:
         // got response before timeout
         if r.StatusCode != 200 {
+			f.nTimeouts++
             return
         }
         f.s.Write(key, addr)
-        f.ttl -= f.ttl/20
+        f.ttl -= 20 * time.Millisecond
     case <- timeoutCh:
         // timeout
-        f.ttl += f.ttl/10
+        f.ttl += 100 * time.Millisecond
         f.log.Print("timeout")
+		f.nTimeouts++
     }
 
 }
@@ -164,14 +167,18 @@ func (f *Frontend) runtime() {
     clients.Items = make([]string, conf.MaxClientsPerFrontend)
     clients.Height = 10
 
-    ttl := ui.NewList()
-    ttl.BorderLabel = "TTL"
-    ttl.Items = []string{f.ttl.String()}
-    ttl.Height = 10
-
+    timeouts := ui.NewLineChart()
+    timeouts.BorderLabel = "% of timeouts"
+    timeouts.Data = make([]float64, 110)
+    timeouts.Width = 50
+    timeouts.Height = 15
+    timeouts.X = 0
+    timeouts.Y = 0
+    timeouts.AxesColor = ui.ColorWhite
+    timeouts.LineColor = ui.ColorRed | ui.AttrBold
 
     ttlh := ui.NewLineChart()
-    ttlh.BorderLabel = "TTL"
+    ttlh.BorderLabel = "TTL: " + f.ttl.String()
     ttlh.Data = make([]float64, 220)
     ttlh.Width = 50
     ttlh.Height = 17
@@ -184,7 +191,7 @@ func (f *Frontend) runtime() {
     ui.Body.AddRows(
         ui.NewRow(
             ui.NewCol(6, 0, clients),
-            ui.NewCol(6, 0, ttl),
+            ui.NewCol(6, 0, timeouts),
         ),
         ui.NewRow(
             ui.NewCol(12, 0, ttlh),
@@ -204,19 +211,34 @@ func (f *Frontend) runtime() {
 
         limit := int(atomic.LoadInt32(f.numClients))
         for item := range(f.clients.Iter()) {
-
-            clients.Items[i] = item.Key + " : " + item.Val.(time.Time).Format(time.Stamp)
+		
+	    clientHost, err := net.LookupAddr(string.Split(item.Key, ":")[0]))
+	    if err != nil {
+		f.log.Print(err)
+	    }
+            clients.Items[i] = clientHost + " : " + item.Val.(time.Time).Format(time.Stamp)
             i++
             if i >= limit {
                 break
             }
         }
 
-        ttl.Items = []string{f.ttl.String()}
+		timeouts.Data = timeouts.Data[1:]
+		tmp_timeouts := (float64(f.nTimeouts) / float64(f.nRequests)) * 100
+		timeouts.Data = append(timeouts.Data, tmp_timeouts)
+		timeouts.BorderLabel = strconv.FormatFloat(tmp_timeouts, 'f', -1, 64) + " % timeouts"
+
         ttlh.Data = ttlh.Data[1:]
         ttlh.Data = append(ttlh.Data, f.ttl.Seconds())
+	ttlh.BorderLabel = "TTL: " + f.ttl.String()
         ui.Render(ui.Body)
     })
+
+	ui.Handle("/sys/wnd/resize", func(e ui.Event) {
+		ui.Body.Width = ui.TermWidth()
+		ui.Body.Align()
+		ui.Render(ui.Body)
+	})
 
     ui.Loop()
 }
