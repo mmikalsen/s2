@@ -1,0 +1,16 @@
+{
+    "Hostfile":                 "hostfile",
+    "LB":                       ["tile-3-0"],
+    "Frontends":                ["tile-3-1","tile-3-2","tile-3-3"],
+    "Backend":                  ["tile-1-0"],
+
+    "ClientPort":               ":43001",
+    "LBPort":                   ":43002",
+    "FrontendPort":             ":43003",
+    "BackendPort":              ":8000",
+
+    "MaxClientsPerFrontend":    8,
+    "LeaseTime":                10000,
+    "ClientInitTTL":            17000,
+    "FrontendInitTTL":          14000
+}

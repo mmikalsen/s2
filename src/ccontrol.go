@@ -104,7 +104,7 @@ func main() {
     if err != nil {
       fmt.Println(err)
     }
-    if (activeClients > 21) {activeClients = 21}
+    if (activeClients > 24) {activeClients = 24}
     if (activeClients > len(clients)) {activeClients = len(clients)}
     if (activeClients < -1) {activeClients = 0}
 

@@ -138,7 +138,8 @@ func (c *client) recive() {
 			c.running = true
 			c.startupSignalCh <- true
 		} else if string(msg) == STOP {
-			c.log.Print("STOP signal recived, now stopped")
+			c.log.Print("STOP signal recived, now stopped - client ttl is reset")
+			c.ttl = time.Duration(conf.ClientInitTTL) * time.Millisecond
 			c.running = false
 		} else if string(msg) == KILL {
 			c.log.Print("KILL signal recived, shutting down")
