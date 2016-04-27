@@ -10,8 +10,8 @@ import string
 from time import sleep
 
 httpdServeRequests = True
-latencySkew = 5
-latencyMultiplier = 5
+latencySkew = 10
+latencyMultiplier = 10
 
 def waitToProduce():
     tts = latencyMultiplier * random.expovariate(latencySkew)
@@ -22,7 +22,7 @@ class FrontendHttpHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
     # Returns the
     def do_GET(self):
-  
+
         ttl = waitToProduce()
         print "waiting " + str(ttl).replace('.', ',') + " s"
 

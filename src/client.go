@@ -9,7 +9,6 @@ import (
 	"./lib/logger"
 	"time"
 	"os"
-	"hash/crc32"
 	"strconv"
 	"net"
 	"runtime"
@@ -17,7 +16,7 @@ import (
 	"github.com/streamrail/concurrent-map"
 	"flag"
 	"github.com/beevik/ntp"
-    //ui "github.com/gizak/termui"
+	//ui "github.com/gizak/termui"
 )
 
 var(
@@ -26,6 +25,7 @@ var(
 	BLUE string = "\033[94m"
 	GREEN string = "\033[92m"
 	RED string = "\033[91m"
+	YELLOW string = "\033[33m"
 	ENDC string = "\033[0m"
 	KILL string = "kill"
 	STOP string = "stop"
@@ -42,11 +42,14 @@ type client struct {
 	ttl time.Duration
 	index  cmap.ConcurrentMap
 	log *log.Logger
-	hash Hash
 	msgRecivedCh chan bool
 	running bool
 	startupSignalCh chan bool
 	localip []net.IP
+
+
+	nRequests int
+	nTimeouts int
 
 }
 
@@ -56,7 +59,9 @@ func (c *client) Init() (error) {
 
 	c.s = new(server.UDPServer)
 	c.s.Init(conf.ClientPort)
-	c.hash = crc32.ChecksumIEEE
+
+	c.nRequests = 0
+	c.nTimeouts = 0
 
 	c.log.Print(conf.LB[0] + conf.LBPort)
 	c.load_balancer, err = net.ResolveUDPAddr("udp", conf.LB[0] + conf.LBPort)
@@ -70,128 +75,127 @@ func (c *client) Init() (error) {
 	}
 	c.localip, err = net.LookupIP(hostname)
 	if err != nil {
-			c.log.Fatal(err)
-		}
-
-		c.running = true
-		c.newLeaseCh = make(chan bool)
-		c.msgRecivedCh = make(chan bool)
-		c.startupSignalCh = make(chan bool)
-		// index data structure
-		c.index = cmap.New()
-		c.ttl = time.Duration(conf.ClientInitTTL) * time.Millisecond
-
-		// start listing to udp stream
-		go c.recive()
-
-		return nil
+		c.log.Fatal(err)
 	}
 
-	func (c *client) recive() {
+	c.running = true
+	c.newLeaseCh = make(chan bool)
+	c.msgRecivedCh = make(chan bool)
+	c.startupSignalCh = make(chan bool)
+	// index data structure
+	c.index = cmap.New()
+	c.ttl = time.Duration(conf.ClientInitTTL) * time.Millisecond
 
-		for {
-			msg, remoteAddr, err := c.s.Read(64)
-			if err != nil {
-				c.log.Fatal()
-			}
-			//log.Print("MSG: ", string(msg))
-			if remoteAddr.String() == c.load_balancer.String() {
-				lease := strings.Split(string(msg), " ")
-				c.frontend, err = net.ResolveUDPAddr("udp", lease[0])
-				if err != nil {
-					c.log.Fatal(err)
-				}
-				c.lease, err  = time.Parse(time.UnixDate, strings.Join(lease[1:], " "))
-				if err != nil {
-					c.log.Fatal(err)
-				}
-				c.log.Print("GOT " , c.frontend.String(), "as frontend")
-				c.newLeaseCh <- true
-			} else if remoteAddr.String() == c.frontend.String() {
-				t1 := time.Now()
-				if val, ok := c.index.Get(string(msg)); ok {
+	// start listing to udp stream
+	go c.recive()
 
-					/* Start a goroutine to remove the key from trie */
-					go func() {
-						c.index.Remove(string(msg))
-					}()
+	return nil
+}
 
-					expire, _ := val.(time.Time)
-					if expire.After(t1) {
-						c.ttl -= time.Duration(10 * time.Millisecond)
-						fmt.Printf(GREEN + "■" + ENDC)
-						c.msgRecivedCh <- true
-						//log.Print(string(fetchedKey), ": ok - current ttl: ", c.ttl)
-					} else {
-						c.ttl += time.Duration(100 * time.Millisecond)
-						fmt.Printf("■")
-						//log.Print(string(fetchedKey), "ttl failed by:", t1.Sub(expire))
-					}
-				}
-			} else if string(msg) == START {
-				c.log.Print("START signal recived, now running")
-				c.running = true
-				c.startupSignalCh <- true
-			} else if string(msg) == STOP {
-				c.log.Print("STOP signal recived, now stopped")
-				c.running = false
-			} else if string(msg) == KILL {
-				c.log.Print("KILL signal recived, shutting down")
-				os.Exit(0)
-			} else {
-				c.log.Print("Unknown message recived", string(msg))
-			}
+func (c *client) recive() {
+
+	for {
+		msg, remoteAddr, err := c.s.Read(64)
+		if err != nil {
+			c.log.Fatal()
 		}
-	}
-
-	func (c *client) Request(count int) int{
-		timeout := make(chan []byte)
-
-		//for i := count; ;i++{
-			key := []byte(strconv.FormatUint(uint64(c.hash(c.localip[0])), 10) + " " + strconv.Itoa(count))
-			t1, err := ntp.Time(ntpServer)
+		//log.Print("MSG: ", string(msg))
+		if remoteAddr.String() == c.load_balancer.String() {
+			lease := strings.Split(string(msg), " ")
+			c.frontend, err = net.ResolveUDPAddr("udp", lease[0])
 			if err != nil {
 				c.log.Fatal(err)
 			}
-			ttl := t1.Add(c.ttl)
-			
-			go func() {
-				tKey := key
-				time.Sleep(c.ttl)
-				timeout <- tKey
-			}()
-
-			c.index.Set(string(key),ttl)
-			//log.Print("Sent: ", key, "- expire: ", ttl)
-			fmt.Printf(BLUE + "■" + ENDC)
-			c.s.Write(key, c.frontend)
-
-			select {
-			case <- timeout:
-				fmt.Printf(RED + "■" + ENDC)
-				c.ttl = c.ttl + c.ttl/10
-				c.log.Print("TimeOut")
-			case <- c.msgRecivedCh:
-				c.log.Print("recv")
+			c.lease, err  = time.Parse(time.UnixDate, strings.Join(lease[1:], " "))
+			if err != nil {
+				c.log.Fatal(err)
 			}
-			count ++
+			c.log.Print("GOT " , c.frontend.String(), "as frontend")
+			c.newLeaseCh <- true
+		} else if remoteAddr.String() == c.frontend.String() {
+			t1 := time.Now()
+			if val, ok := c.index.Get(string(msg)); ok {
 
-			return count
+				/* Start a goroutine to remove the key from trie */
+				go func() {
+					c.index.Remove(string(msg))
+				}()
 
-	}
-
-	func (c *client) CheckLease() bool{
-			
-		t1, err := ntp.Time(ntpServer)
-		if err != nil {
-			log.Fatal(err)
-		}
-		c.log.Print(c.lease.String() + " " + t1.String())
-		if c.lease.After(t1) {
-			return true
+				expire, _ := val.(time.Time)
+				if expire.After(t1) {
+					c.ttl -= time.Duration(10 * time.Millisecond)
+					fmt.Printf(GREEN + "■" + ENDC)
+					c.msgRecivedCh <- true
+					//log.Print(string(fetchedKey), ": ok - current ttl: ", c.ttl)
+				} else {
+					c.ttl += time.Duration(50 * time.Millisecond)
+					fmt.Printf("■")
+					//log.Print(string(fetchedKey), "ttl failed by:", t1.Sub(expire))
+				}
+			}
+		} else if string(msg) == START {
+			c.log.Print("START signal recived, now running")
+			c.running = true
+			c.startupSignalCh <- true
+		} else if string(msg) == STOP {
+			c.log.Print("STOP signal recived, now stopped")
+			c.running = false
+		} else if string(msg) == KILL {
+			c.log.Print("KILL signal recived, shutting down")
+			os.Exit(0)
 		} else {
-			return false
+			c.log.Print("Unknown message recived", string(msg))
 		}
+	}
+}
+
+func (c *client) Request(count int) int{
+	timeout := make(chan []byte)
+	c.nRequests++
+
+	//for i := count; ;i++{
+	key := []byte(c.localip[0].String() + " " + strconv.Itoa(count))
+	t1 := time.Now()
+	ttl := t1.Add(c.ttl)
+
+	go func() {
+		tKey := key
+		time.Sleep(c.ttl)
+		timeout <- tKey
+	}()
+
+	c.index.Set(string(key),ttl)
+	//log.Print("Sent: ", key, "- expire: ", ttl)
+	fmt.Printf(BLUE + "■" + ENDC)
+	c.s.Write(key, c.frontend)
+
+	select {
+	case <- timeout:
+		fmt.Printf(RED + "■" + ENDC)
+		c.ttl = c.ttl + c.ttl/10
+		c.nTimeouts++
+		c.log.Print("TimeOut")
+	case <- c.msgRecivedCh:
+		c.log.Print("recv")
+	}
+	count ++
+
+	return count
+
+}
+
+func (c *client) CheckLease() bool{
+
+	t1, err := ntp.Time(ntpServer)
+	if err != nil {
+		log.Fatal(err)
+	}
+	c.log.Print(c.lease.String() + " " + t1.String())
+	if c.lease.After(t1) {
+		return true
+	} else {
+		return false
+	}
 }
 
 func (c *client) RenewLease(retry bool,timeoutMS int) bool{
@@ -202,20 +206,31 @@ func (c *client) RenewLease(retry bool,timeoutMS int) bool{
 		c.s.Write([]byte("new_lease"), c.load_balancer)
 		c.log.Print("new lease request")
 		go func() {
-					time.Sleep(time.Duration(10 * time.Second))
+			time.Sleep(time.Duration(200 * time.Millisecond))
 			timeout <- true
 		}()
-		
+
 		select{
 		case <-c.newLeaseCh:
 			c.log.Print("new frontend lease recived: ", c.frontend.String())
 			return true
 		case <-timeout:
 			c.log.Print("lease request timeout ")
-			continue 
+			continue
 		}
 	}
 	return false
+}
+
+func (c *client) Metric() {
+	var tot_ttl time.Duration
+	for i := 1; ;i++ {
+		time.Sleep(10 * time.Second)
+
+		tot_ttl += c.ttl
+		c.log.Print("Average ttl: " + (tot_ttl / time.Duration(i)).String())
+		c.log.Print("Timeout % " + strconv.FormatFloat(float64(c.nTimeouts)/float64(c.nRequests) * 100, 'f', -1, 64))
+	}
 }
 
 func main() {
@@ -227,8 +242,8 @@ func main() {
 	flag.Parse()
 
 	// Read configurations from file
-    	err := conf.GetConfig(confFile)
-    	if err != nil {
+	err := conf.GetConfig(confFile)
+	if err != nil {
 		log.Fatal(err)
 	}
 
@@ -238,6 +253,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	go c.Metric()
 
 	c.log, err = logger.InitLogger("logs/client/" + hostname)
 	if err != nil {
@@ -254,7 +271,7 @@ func main() {
 	for {
 		if !c.running {
 			if <-c.startupSignalCh {} //wait for start signal
-		} 
+		}
 
 		if c.CheckLease() {
 			count = c.Request(count)
