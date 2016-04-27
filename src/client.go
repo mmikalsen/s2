@@ -15,7 +15,7 @@ import (
 	"strings"
 	"github.com/streamrail/concurrent-map"
 	"flag"
-	"github.com/beevik/ntp"
+	_"github.com/beevik/ntp"
 	//ui "github.com/gizak/termui"
 )
 
@@ -123,12 +123,12 @@ func (c *client) recive() {
 
 				expire, _ := val.(time.Time)
 				if expire.After(t1) {
-					c.ttl -= time.Duration(10 * time.Millisecond)
+					c.ttl -= time.Duration(20 * time.Millisecond)
 					fmt.Printf(GREEN + "■" + ENDC)
 					c.msgRecivedCh <- true
 					//log.Print(string(fetchedKey), ": ok - current ttl: ", c.ttl)
 				} else {
-					c.ttl += time.Duration(50 * time.Millisecond)
+					c.ttl += time.Duration(100 * time.Millisecond)
 					fmt.Printf("■")
 					//log.Print(string(fetchedKey), "ttl failed by:", t1.Sub(expire))
 				}
@@ -173,7 +173,7 @@ func (c *client) Request(count int) int{
 	select {
 	case <- timeout:
 		fmt.Printf(RED + "■" + ENDC)
-		c.ttl = c.ttl + c.ttl/10
+		c.ttl += time.Duration(300 * time.Millisecond)
 		c.nTimeouts++
 		c.log.Print("TimeOut")
 	case <- c.msgRecivedCh:
@@ -187,10 +187,13 @@ func (c *client) Request(count int) int{
 
 func (c *client) CheckLease() bool{
 
-	t1, err := ntp.Time(ntpServer)
+
+	/* t1, err := ntp.Time(ntpServer)
 	if err != nil {
 		log.Fatal(err)
 	}
+	*/
+	t1 := time.Now()
 	c.log.Print(c.lease.String() + " " + t1.String())
 	if c.lease.After(t1) {
 		return true

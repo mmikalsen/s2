@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"flag"
 	ui "github.com/gizak/termui"
-	"github.com/beevik/ntp"
+	_"github.com/beevik/ntp"
 	"strconv"
 )
 
@@ -92,10 +92,12 @@ func (f *Frontend) recive() {
 
 			go func() {
 				// Remove the client once the lease runs out
-				t1, err := ntp.Time(ntpServer)
+				/* t1, err := ntp.Time(ntpServer)
 				if err != nil {
 					f.log.Fatal(err)
 				}
+				*/
+				t1 := time.Now()
 				time.Sleep(lease.Sub(t1))
 				f.clients.Remove(clientAddr)
 				atomic.AddInt32(f.numClients, -1)

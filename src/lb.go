@@ -14,7 +14,8 @@ import  (
 	"os"
 	"flag"
 	ui "github.com/gizak/termui"
-	"github.com/beevik/ntp"
+	_"github.com/beevik/ntp"
+	"errors"
 	_"math/rand"
 )
 
@@ -78,11 +79,12 @@ func (l *lb) Serve() {
 		if string(msg) == "new_lease" {
 			frontend, lease, err := l.NewClient(remoteAddr)
 			if err != nil {
-				l.log.Fatal(err)
+				// Not enough room, reject lease request and let client try again later!
+				l.log.Print(err)
+				continue
 			}
-			go func() {
-				l.s.Write([]byte(remoteAddr.String() + " " + lease.Format(time.UnixDate)), frontend.addr)
-			}()
+
+			l.s.Write([]byte(remoteAddr.String() + " " + lease.Format(time.UnixDate)), frontend.addr)
 			l.s.Write([]byte(frontend.addr.String() + " " + lease.Format(time.UnixDate)), remoteAddr)
 
 			remoteHost, err := net.LookupAddr(strings.Split(remoteAddr.String(), ":")[0])
@@ -95,11 +97,6 @@ func (l *lb) Serve() {
 			}
 			l.eCh <- remoteHost[0] + " Assigned to " + frontendHost[0]
 			l.log.Print(remoteHost[0] + " Assigned to " + frontendHost[0])
-
-			// FIXME -- Make the Frontend contact the LB when starting up -- \\
-		} else if string(msg) == "frontend_up" {
-			l.log.Print("NEW FRONTEND: ", remoteAddr.String())
-			l.s.Write([]byte(l.backend), remoteAddr)
 		}
 	}
 }
@@ -109,10 +106,13 @@ func (l *lb) NewClient(client *net.UDPAddr) (*lbFrontend, time.Time, error) {
 	for i := range(l.frontends) {
 		frontend := &l.frontends[i]
 		if atomic.LoadInt32(frontend.up) == 1 && atomic.LoadInt32(frontend.numClients) < conf.MaxClientsPerFrontend {
+			/*
 			t1, err := ntp.Time(ntpServer)
 			if err != nil {
 				log.Fatal(err)
 			}
+			*/
+			t1 := time.Now()
 			route := &route{
 				client,
 				frontend.addr,
@@ -144,8 +144,7 @@ func (l *lb) NewClient(client *net.UDPAddr) (*lbFrontend, time.Time, error) {
 			}
 		}
 		// try again before 
-		time.Sleep(10 * time.Millisecond)
-		return l.NewClient(client)
+		return nil, time.Now(), errors.New("Not enough room!")
 	}
 
 
