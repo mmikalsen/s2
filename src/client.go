@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	//"errors"
 	"log"
 	"./lib/server"
 	"./lib/config"
@@ -16,7 +15,6 @@ import (
 	"github.com/streamrail/concurrent-map"
 	"flag"
 	_"github.com/beevik/ntp"
-	//ui "github.com/gizak/termui"
 )
 
 var(
@@ -99,7 +97,6 @@ func (c *client) recive() {
 		if err != nil {
 			c.log.Fatal()
 		}
-		//log.Print("MSG: ", string(msg))
 		if remoteAddr.String() == c.load_balancer.String() {
 			lease := strings.Split(string(msg), " ")
 			c.frontend, err = net.ResolveUDPAddr("udp", lease[0])
@@ -126,11 +123,10 @@ func (c *client) recive() {
 					c.ttl -= time.Duration(20 * time.Millisecond)
 					fmt.Printf(GREEN + "■" + ENDC)
 					c.msgRecivedCh <- true
-					//log.Print(string(fetchedKey), ": ok - current ttl: ", c.ttl)
+
 				} else {
 					c.ttl += time.Duration(100 * time.Millisecond)
 					fmt.Printf("■")
-					//log.Print(string(fetchedKey), "ttl failed by:", t1.Sub(expire))
 				}
 			}
 		} else if string(msg) == START {
@@ -154,7 +150,6 @@ func (c *client) Request(count int) int{
 	timeout := make(chan []byte)
 	c.nRequests++
 
-	//for i := count; ;i++{
 	key := []byte(c.localip[0].String() + " " + strconv.Itoa(count))
 	t1 := time.Now()
 	ttl := t1.Add(c.ttl)
@@ -166,7 +161,6 @@ func (c *client) Request(count int) int{
 	}()
 
 	c.index.Set(string(key),ttl)
-	//log.Print("Sent: ", key, "- expire: ", ttl)
 	fmt.Printf(BLUE + "■" + ENDC)
 	c.s.Write(key, c.frontend)
 
@@ -187,12 +181,6 @@ func (c *client) Request(count int) int{
 
 func (c *client) CheckLease() bool{
 
-
-	/* t1, err := ntp.Time(ntpServer)
-	if err != nil {
-		log.Fatal(err)
-	}
-	*/
 	t1 := time.Now()
 	c.log.Print(c.lease.String() + " " + t1.String())
 	if c.lease.After(t1) {

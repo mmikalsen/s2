@@ -68,13 +68,11 @@ func (f *Frontend) Init() {
 func (f *Frontend) recive() {
 
 	for {
-		body, remoteAddr, err := f.s.Read(64) //TODO: Some runtime error here
+		body, remoteAddr, err := f.s.Read(64)
 		if err != nil {
 			f.log.Fatal(err)
 		}
 		if remoteAddr.String() == f.load_balancer.String() {
-			// msg: "clientAddr lease"
-			//log.Print("GOT MSG: load_balancer - " + string(body))
 			if (atomic.LoadInt32(f.numClients) >= int32(conf.MaxClientsPerFrontend)) {
 				f.log.Print("Client limit reached. Aborting receive")
 				return
@@ -92,11 +90,6 @@ func (f *Frontend) recive() {
 
 			go func() {
 				// Remove the client once the lease runs out
-				/* t1, err := ntp.Time(ntpServer)
-				if err != nil {
-					f.log.Fatal(err)
-				}
-				*/
 				t1 := time.Now()
 				time.Sleep(lease.Sub(t1))
 				f.clients.Remove(clientAddr)
@@ -109,7 +102,6 @@ func (f *Frontend) recive() {
 				return
 			}
 
-			//log.Print("Sending request: ", string(body), " to backend")
 			go f.httpGet(body, remoteAddr)
 		}
 	}

@@ -19,7 +19,6 @@ var(
 
 
 func sendCommand(command string, addr string){
-  //p :=  make([]byte, 2048)
 
   fmt.Printf("send %s to %s\n", command, addr)
   conn, err := net.Dial("udp", addr)
@@ -94,7 +93,6 @@ func main() {
 
 
   for {
-    //fmt.Print("\033[H\033[2J")
     fmt.Printf("\nSet number of clients (%d)\n", activeClients)
     reader := bufio.NewReader(os.Stdin)
     input, _ := reader.ReadString('\n')

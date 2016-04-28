@@ -106,12 +106,7 @@ func (l *lb) NewClient(client *net.UDPAddr) (*lbFrontend, time.Time, error) {
 	for i := range(l.frontends) {
 		frontend := &l.frontends[i]
 		if atomic.LoadInt32(frontend.up) == 1 && atomic.LoadInt32(frontend.numClients) < conf.MaxClientsPerFrontend {
-			/*
-			t1, err := ntp.Time(ntpServer)
-			if err != nil {
-				log.Fatal(err)
-			}
-			*/
+
 			t1 := time.Now()
 			route := &route{
 				client,
